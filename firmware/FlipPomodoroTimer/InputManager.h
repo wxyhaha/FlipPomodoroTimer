@@ -13,6 +13,11 @@ enum UserAction {
 class InputManager {
 public:
   bool touchReady = false;
+  uint8_t currentRotation = 0;
+
+  void setRotation(uint8_t r) {
+    currentRotation = r & 3;
+  }
 
   bool init(TwoWire &wire = Wire) {
     pinMode(BOARD_BOOT_PIN, INPUT_PULLUP);
@@ -54,7 +59,7 @@ public:
     // 如果按键已触发，直接返回
     if (result != ACTION_NONE) return result;
 
-    // 2. 处理触摸屏触控事件
+    // 2. 处理触摸屏触控事件（全屏轻触交互）
     if (touchReady) {
       int16_t x[1], y[1];
       uint8_t touched = touch.getPoint(x, y, 1);

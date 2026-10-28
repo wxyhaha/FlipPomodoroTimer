@@ -32,12 +32,16 @@ public:
   void showBootScreen();
   void fullRedraw(const PomodoroEngine &engine, const IMUSensor &imu, const PowerManager &power);
   void update(const PomodoroEngine &engine, const IMUSensor &imu, const PowerManager &power);
+  void setRotation(uint8_t r);
+  uint8_t getRotation() const { return currentRotation; }
   Arduino_XCA9554SWSPI* getExpander() const { return expander; }
 
 private:
   Arduino_XCA9554SWSPI *expander = nullptr;
   Arduino_ESP32RGBPanel *rgbpanel = nullptr;
   Arduino_RGB_Display *gfx = nullptr;
+
+  uint8_t currentRotation = 0;
 
   // 缓存渲染状态，实现精准局部无闪烁刷新
   TimerState lastState = STATE_IDLE;

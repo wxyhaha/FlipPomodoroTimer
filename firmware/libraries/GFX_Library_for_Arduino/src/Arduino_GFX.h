@@ -21,6 +21,14 @@
 #define U8G2_FONT_SUPPORT
 #endif
 
+#ifndef U8G2_WITH_UNICODE
+#define U8G2_WITH_UNICODE
+#endif
+
+#ifndef U8G2_USE_LARGE_FONTS
+#define U8G2_USE_LARGE_FONTS
+#endif
+
 #ifndef U8G2_FONT_SECTION
 #define U8G2_FONT_SECTION(name)
 #endif

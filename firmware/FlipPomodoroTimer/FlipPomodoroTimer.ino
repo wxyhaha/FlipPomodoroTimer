@@ -45,7 +45,7 @@ void setup() {
     Serial.println("FAILED!");
   }
 
-  // 4. 初始化六轴姿态传感器 (QMI8658 四面独立倾角解算)
+  // 4. 初始化六轴姿态传感器 (QMI8658 四面独立倾角解算与自适应重力旋转)
   Serial.print("Init QMI8658 IMU... ");
   if (imu.init()) {
     Serial.println("OK");
@@ -71,6 +71,11 @@ void setup() {
 
   // 7. 初始化番茄钟状态机
   engine.begin();
+
+  // 根据启动时的初始姿态自动校准屏幕显示方向
+  uint8_t initialRotation = imu.getDisplayRotation(0);
+  ui.setRotation(initialRotation);
+  input.setRotation(initialRotation);
 
   delay(600);
 
@@ -99,10 +104,20 @@ void loop() {
     Serial.printf("[IMU] Orientation Changed -> %s (ax=%.2f, ay=%.2f, az=%.2f)\n",
                   imu.getOrientationName(), imu.ax, imu.ay, imu.az);
 
+    // 检查并更新自适应重力方向屏幕旋转 (0: 0°, 1: 90°, 2: 180°, 3: 270°)
+    uint8_t targetRot = imu.getDisplayRotation(ui.getRotation());
+    if (targetRot != ui.getRotation()) {
+      Serial.printf("[DISPLAY] Auto-Rotate: %u -> %u (%u deg)\n",
+                    ui.getRotation(), targetRot, targetRot * 90);
+      ui.setRotation(targetRot);
+      input.setRotation(targetRot);
+      ui.fullRedraw(engine, imu, power);
+    }
+
     if (imu.isFlippedDown()) {
-      // 动作：设备翻转盖在桌面上
+      // 动作：设备屏幕完全朝下盖在桌面上
       if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
-        Serial.println("[POMO] Auto Pause by Flip Down!");
+        Serial.println("[POMO] Auto Pause by Flip Down (Screen Dim)");
         engine.pause(PAUSE_BY_FLIP);
         power.dimForFlipDown(); // 关断背光完全息屏省电
       } else if (engine.state == STATE_COMPLETED) {
@@ -110,34 +125,33 @@ void loop() {
         engine.confirmCompleted();
         power.dimForFlipDown();
       }
-    } else {
-      // 动作：设备屏幕可见（桌面平放或侧立面）
+    } else if (imu.isBackwardPaused()) {
+      // 动作：向后翻转平放在桌面上（用户核心需求：向后翻转暂停）
+      power.restoreFromFlipUp(); // 确保屏幕处于 100% 满血高亮，让用户看清暂停提示
+      if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
+        Serial.println("[POMO] Auto Pause by Backward Flip!");
+        engine.pause(PAUSE_BY_FLIP);
+      } else if (engine.state == STATE_COMPLETED) {
+        Serial.println("[POMO] Confirm Completed by Backward Flip");
+        engine.confirmCompleted();
+      }
+    } else if (imu.isTiltedFace()) {
+      // 动作：设备立在 4 个侧立面之一
       power.restoreFromFlipUp(); // 100% 满血点亮屏幕
+      uint8_t face = imu.getFaceIndex();
+      unsigned long faceSec = imu.getFaceDurationSec();
 
-      if (imu.isTiltedFace()) {
-        uint8_t face = imu.getFaceIndex();
-        unsigned long faceSec = imu.getFaceDurationSec();
-
-        // 如果立到了新的面，或者之前在待机/完成状态，切换到对应面独立倒计时
-        if (engine.activeFace != face || engine.state == STATE_IDLE || engine.state == STATE_COMPLETED) {
-          Serial.printf("[POMO] Tilt to New Face %u (%lu sec) -> Start Timer!\n", face, faceSec);
-          audio.playStartTone();
-          engine.startFace(face, faceSec);
-        } else if ((engine.state == STATE_FOCUS_PAUSED || engine.state == STATE_BREAK_PAUSED) &&
-                   engine.pauseReason == PAUSE_BY_FLIP) {
-          // 如果是同一个面从翻转盖下中恢复
-          Serial.printf("[POMO] Tilt back to Same Face %u -> Resume Timer!\n", face);
-          audio.playStartTone();
-          engine.resume();
-        }
-      } else if (imu.currentOrientation == ORIENTATION_FACE_UP) {
-        // 桌面平放：如果是盖下暂停后平放回来，自动恢复继续倒计时
-        if ((engine.state == STATE_FOCUS_PAUSED || engine.state == STATE_BREAK_PAUSED) &&
-            engine.pauseReason == PAUSE_BY_FLIP) {
-          Serial.println("[POMO] Auto Resume by Flip Face Up!");
-          audio.playStartTone();
-          engine.resume();
-        }
+      // 如果立到了新的面，或者之前在待机/完成状态，切换到对应面独立倒计时
+      if (engine.activeFace != face || engine.state == STATE_IDLE || engine.state == STATE_COMPLETED) {
+        Serial.printf("[POMO] Tilt to New Face %u (%lu sec) -> Start Timer!\n", face, faceSec);
+        audio.playStartTone();
+        engine.startFace(face, faceSec);
+      } else if ((engine.state == STATE_FOCUS_PAUSED || engine.state == STATE_BREAK_PAUSED) &&
+                 engine.pauseReason == PAUSE_BY_FLIP) {
+        // 如果是同一个面从向后翻转暂停或盖下暂停中重新立起恢复
+        Serial.printf("[POMO] Tilt back to Same Face %u -> Resume Timer!\n", face);
+        audio.playStartTone();
+        engine.resume();
       }
     }
   }
@@ -165,8 +179,8 @@ void loop() {
   if (now - lastTelemetryTime >= 1000) {
     lastTelemetryTime = now;
     unsigned long rem = engine.getRemainingSeconds();
-    Serial.printf("[STATUS] Time: %02lu:%02lu | Face: %u | State: %d | Ori: %s | VBUS: %umV (in:%d) | Batt: %umV (%d%%)\n",
-                  rem / 60, rem % 60, engine.activeFace, engine.state, imu.getOrientationName(),
+    Serial.printf("[STATUS] Time: %02lu:%02lu | Face: %u (Rot:%u) | State: %d | Ori: %s | VBUS: %umV (in:%d) | Batt: %umV (%d%%)\n",
+                  rem / 60, rem % 60, engine.activeFace, ui.getRotation(), engine.state, imu.getOrientationName(),
                   power.vbusVoltageMv, power.vbusIn, power.battVoltageMv, power.batteryPercent);
   }
 

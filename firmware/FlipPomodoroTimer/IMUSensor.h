@@ -6,13 +6,13 @@
 
 enum DeviceOrientation {
   ORIENTATION_UNKNOWN,
-  ORIENTATION_FACE_UP,      // 正面平放（屏幕朝上看屏）
-  ORIENTATION_FACE_DOWN,    // 翻转盖下（屏幕贴桌，自动暂停熄屏）
-  ORIENTATION_FACE_1,       // 面一：前倾立面（5分钟短休息/闪电番茄）
-  ORIENTATION_FACE_2,       // 面二：左倾立面（15分钟快速任务）
-  ORIENTATION_FACE_3,       // 面三：后倾立面（25分钟标准番茄）
-  ORIENTATION_FACE_4,       // 面四：右倾立面（45分钟深度专注）
-  ORIENTATION_MOVING        // 拿取/移动防抖中
+  ORIENTATION_BACKWARD_PAUSE, // 向后翻转平放（屏幕朝上仰卧桌面，向后翻转暂停）
+  ORIENTATION_FACE_DOWN,      // 翻转盖在桌面上（屏幕朝下盖下，完全息屏节能暂停）
+  ORIENTATION_FACE_1,         // 面一：上边着台（5分钟短休息/闪电番茄）
+  ORIENTATION_FACE_2,         // 面二：左边着台（15分钟快速任务）
+  ORIENTATION_FACE_3,         // 面三：下边着台（25分钟标准番茄）
+  ORIENTATION_FACE_4,         // 面四：右边着台（45分钟深度专注）
+  ORIENTATION_MOVING          // 拿取/移动防抖中
 };
 
 class IMUSensor {
@@ -21,8 +21,8 @@ public:
   float ax = 0, ay = 0, az = 0;
   float gx = 0, gy = 0, gz = 0;
 
-  DeviceOrientation currentOrientation = ORIENTATION_FACE_UP;
-  DeviceOrientation candidateOrientation = ORIENTATION_FACE_UP;
+  DeviceOrientation currentOrientation = ORIENTATION_FACE_3;
+  DeviceOrientation candidateOrientation = ORIENTATION_FACE_3;
   unsigned long candidateStartTime = 0;
 
   // 防抖稳定时间（毫秒）
@@ -59,7 +59,7 @@ public:
       candidateOrientation = rawOri;
       candidateStartTime = now;
     } else {
-      // 检查是否持续稳定
+      // 检查是否持续稳定超过防抖阈值
       if (candidateOrientation != ORIENTATION_MOVING && candidateOrientation != currentOrientation) {
         if (now - candidateStartTime >= STABLE_DURATION_MS) {
           currentOrientation = candidateOrientation;
@@ -70,8 +70,16 @@ public:
     return false;
   }
 
+  bool isBackwardPaused() const {
+    return currentOrientation == ORIENTATION_BACKWARD_PAUSE;
+  }
+
   bool isFlippedDown() const {
     return currentOrientation == ORIENTATION_FACE_DOWN;
+  }
+
+  bool isPauseOrientation() const {
+    return currentOrientation == ORIENTATION_BACKWARD_PAUSE || currentOrientation == ORIENTATION_FACE_DOWN;
   }
 
   bool isDisplayVisible() const {
@@ -99,16 +107,27 @@ public:
     }
   }
 
+  // 根据当前重力加速度计算自适应屏幕旋转方向 (0: 0°, 1: 90° CW, 2: 180°, 3: 270° CW)
+  uint8_t getDisplayRotation(uint8_t fallbackRotation = 0) const {
+    switch (currentOrientation) {
+      case ORIENTATION_FACE_3: return 0; // 下边着台 (正常正向)
+      case ORIENTATION_FACE_2: return 1; // 左边着台 (顺时针90°)
+      case ORIENTATION_FACE_1: return 2; // 上边着台 (180°倒置)
+      case ORIENTATION_FACE_4: return 3; // 右边着台 (顺时针270°)
+      default:                 return fallbackRotation; // 向后翻平或移动中保持当前屏幕方向
+    }
+  }
+
   const char* getOrientationName() const {
     switch (currentOrientation) {
-      case ORIENTATION_FACE_UP:   return "正面平放";
-      case ORIENTATION_FACE_DOWN: return "翻转盖下";
-      case ORIENTATION_FACE_1:    return "面一(5分)";
-      case ORIENTATION_FACE_2:    return "面二(15分)";
-      case ORIENTATION_FACE_3:    return "面三(25分)";
-      case ORIENTATION_FACE_4:    return "面四(45分)";
-      case ORIENTATION_MOVING:    return "移动中";
-      default:                    return "未知";
+      case ORIENTATION_BACKWARD_PAUSE: return "向后翻平(暂停)";
+      case ORIENTATION_FACE_DOWN:      return "翻转盖下(息屏)";
+      case ORIENTATION_FACE_1:         return "面一(5分)";
+      case ORIENTATION_FACE_2:         return "面二(15分)";
+      case ORIENTATION_FACE_3:         return "面三(25分)";
+      case ORIENTATION_FACE_4:         return "面四(45分)";
+      case ORIENTATION_MOVING:         return "移动防抖中";
+      default:                         return "未知姿态";
     }
   }
 
@@ -117,22 +136,22 @@ private:
 
   DeviceOrientation classifyRawOrientation(float x, float y, float z) {
     // 实际实测物理重力分量特征：
-    // 1. 翻转盖在桌面上（屏幕向下）：az 显著为正值 (约为 +1.0g)
-    if (z > 0.45f) {
+    // 1. 翻转盖在桌面上（屏幕朝下）：az 显著为正值 (约为 +1.0g)
+    if (z > 0.50f) {
       return ORIENTATION_FACE_DOWN;
     }
 
-    // 2. 屏幕朝上平放桌面：az 显著为负值 (约为 -0.7g ~ -1.0g)，且 x,y 较小
-    if (z < -0.55f && fabsf(x) < 0.35f && fabsf(y) < 0.35f) {
-      return ORIENTATION_FACE_UP;
+    // 2. 向后翻转平放（屏幕朝上仰卧桌面，向后翻转暂停）：az 显著为负值 (约为 -0.7g ~ -1.0g)，且 x,y 水平分量较小
+    if (z < -0.50f && fabsf(x) < 0.38f && fabsf(y) < 0.38f) {
+      return ORIENTATION_BACKWARD_PAUSE;
     }
 
     // 3. 四个侧立面/倾角面：z 轴分量衰减，重力主要落在 x 或 y 轴上
-    if (fabsf(y) >= fabsf(x) && fabsf(y) > 0.40f) {
-      // Y 轴主导
-      return (y < 0.0f) ? ORIENTATION_FACE_1 : ORIENTATION_FACE_3;
-    } else if (fabsf(x) > fabsf(y) && fabsf(x) > 0.40f) {
-      // X 轴主导
+    if (fabsf(y) >= fabsf(x) && fabsf(y) > 0.35f) {
+      // Y 轴主导：y > 0 为下边着台（面三），y < 0 为上边着台（面一）
+      return (y > 0.0f) ? ORIENTATION_FACE_3 : ORIENTATION_FACE_1;
+    } else if (fabsf(x) > fabsf(y) && fabsf(x) > 0.35f) {
+      // X 轴主导：x < 0 为左边着台（面二），x > 0 为右边着台（面四）
       return (x < 0.0f) ? ORIENTATION_FACE_2 : ORIENTATION_FACE_4;
     }
 
