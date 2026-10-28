@@ -47,6 +47,9 @@ public:
 
   void update() {
     if (!isReady) return;
+    unsigned long now = millis();
+    if (sampled && now - lastSampleMs < 250) return;
+    sampled = true; lastSampleMs = now;
 
     vbusIn = pmu.isVbusIn();
     vbusVoltageMv = pmu.getVbusVoltage();
@@ -63,6 +66,9 @@ public:
       batteryPercent = -1;
     }
   }
+
+  bool sampled = false;
+  unsigned long lastSampleMs = 0;
 
   void setBacklight(uint8_t brightness) {
     targetBrightness = brightness;

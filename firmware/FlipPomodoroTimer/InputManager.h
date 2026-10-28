@@ -16,8 +16,14 @@ public:
   uint8_t currentRotation = 0;
   int16_t lastTapX = -1;
   int16_t lastTapY = -1;
+  bool lastTapFromButton = false;
 
   void setRotation(uint8_t r) {
+    if (currentRotation != (r & 3)) {
+      // Cancel a touch that began in a different orientation.
+      isTouched = false;
+      suppressTouchUntilRelease = true;
+    }
     currentRotation = r & 3;
   }
 
@@ -55,6 +61,7 @@ public:
           // 短按触发
           lastTapX = 240;
           lastTapY = 240;
+          lastTapFromButton = true;
           result = ACTION_TAP;
         }
       }
@@ -67,6 +74,10 @@ public:
     if (touchReady) {
       int16_t x[1], y[1];
       uint8_t touched = touch.getPoint(x, y, 1);
+      if (suppressTouchUntilRelease) {
+        if (touched == 0) suppressTouchUntilRelease = false;
+        return result;
+      }
       if (touched > 0) {
         rawX = x[0];
         rawY = y[0];
@@ -81,6 +92,7 @@ public:
           if (now - touchStartTime >= 50 && now - touchStartTime <= 1200) {
             // 根据当前屏幕旋转计算显示坐标
             mapCoordinates(rawX, rawY, lastTapX, lastTapY);
+            lastTapFromButton = false;
             result = ACTION_TAP;
           }
         }
@@ -100,6 +112,7 @@ private:
 
   // 触摸状态
   bool isTouched = false;
+  bool suppressTouchUntilRelease = false;
   unsigned long touchStartTime = 0;
   int16_t rawX = 0, rawY = 0;
 

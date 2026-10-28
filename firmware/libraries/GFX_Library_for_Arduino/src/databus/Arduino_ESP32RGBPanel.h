@@ -91,6 +91,10 @@ public:
 
   uint16_t *getFrameBuffer(int16_t w, int16_t h);
 
+  // FlipPomodoroTimer opt-in extension. Existing sketches retain one buffer.
+  void enableDoubleBuffer() { _doubleBuffer = true; }
+  esp_lcd_panel_handle_t panelHandle() const { return _panel_handle; }
+
 protected:
 private:
   int32_t _speed;
@@ -112,6 +116,7 @@ private:
   uint16_t _de_idle_high;
   uint16_t _pclk_idle_high;
   size_t _bounce_buffer_size_px;
+  bool _doubleBuffer = false;
 
   esp_lcd_panel_handle_t _panel_handle = NULL;
 };

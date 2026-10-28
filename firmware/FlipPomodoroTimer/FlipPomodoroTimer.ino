@@ -8,11 +8,12 @@
 #include "InputManager.h"
 #include "AudioManager.h"
 #include "RTCManager.h"
-#include "Perspective3D.h"
 
-// Wi-Fi 自动校时凭证
-const char* WIFI_SSID = "";
-const char* WIFI_PASS = "";
+#include "WiFiConfig.h"
+
+// Wi-Fi 配置来自忽略的本地文件；未配置时离线运行。
+
+
 
 PomodoroEngine engine;
 IMUSensor imu;
@@ -21,11 +22,8 @@ DisplayUI ui;
 InputManager input;
 AudioManager audio;
 RTCManager rtc;
-Perspective3D p3d;
 
 unsigned long lastTelemetryTime = 0;
-bool isTilting3D = false;
-unsigned long lastTiltRenderTime = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -73,14 +71,6 @@ void setup() {
     Serial.println("FAILED!");
   }
 
-  // 6. 初始化 2.5D/3D 透视渲染引擎
-  Serial.print("Init Perspective 3D Engine... ");
-  if (p3d.init(ui.getDisplay())) {
-    Serial.println("OK");
-  } else {
-    Serial.println("FAILED!");
-  }
-
   // 7. 初始化触控与按键 (GT911 & BOOT Pin)
   Serial.print("Init Input (Touch & Button)... ");
   if (input.init()) {
@@ -109,8 +99,7 @@ void setup() {
 
   // 首次完整绘制拟真科技感全界面
   ui.fullRedraw(engine, imu, power, rtc);
-  p3d.captureSnapshot();
-  Serial.println("System Ready! Tilt cube or tap badges.\n");
+  Serial.println("System Ready! UI V6.1 - fast 2D rotation, native digits, frame-release double buffer.\n");
 }
 
 void loop() {
@@ -133,29 +122,12 @@ void loop() {
   // 4. 轮询姿态传感器（125Hz 采样与 600ms 滤波）
   bool oriChanged = imu.update();
 
-  // 5. [方案 B 物理跟随] 实时 3D 动力学透视跟随渲染
-  if (p3d.isReady && !imu.isPauseOrientation() && ui.isReady) {
-    float tiltOffset = imu.getTiltOffsetDeg(ui.getRotation());
-
-    if (fabsf(tiltOffset) > 4.5f) {
-      // 处于手持倾斜滚转中
-      if (!isTilting3D) {
-        p3d.captureSnapshot();
-        isTilting3D = true;
-      }
-      // 限制 3D 物理渲染帧率约 35 FPS (每 28ms 渲染一帧)
-      if (now - lastTiltRenderTime >= 28) {
-        lastTiltRenderTime = now;
-        p3d.renderPerspective(tiltOffset);
-      }
-    } else {
-      // 倾角回正平稳
-      if (isTilting3D) {
-        isTilting3D = false;
-        ui.fullRedraw(engine, imu, power, rtc);
-        p3d.captureSnapshot();
-      }
-    }
+  // Visual direction is independent of the 600ms timer-face confirmation.
+  uint8_t targetRot = imu.getVisualRotation(ui.getRotation());
+  if (targetRot != ui.getRotation()) {
+    ui.setRotation(targetRot);
+    input.setRotation(targetRot);
+    Serial.printf("[DISPLAY] 2D direction -> %u deg\n", targetRot * 90);
   }
 
   // 6. 姿态发生稳态切换事件
@@ -163,18 +135,8 @@ void loop() {
     Serial.printf("[IMU] Orientation Changed -> %s (ax=%.2f, ay=%.2f, az=%.2f, roll=%.1f deg)\n",
                   imu.getOrientationName(), imu.ax, imu.ay, imu.az, imu.smoothRollAngle);
 
-    // 检查并更新自适应重力方向屏幕旋转 (0: 0°, 1: 90°, 2: 180°, 3: 270°)
-    uint8_t targetRot = imu.getDisplayRotation(ui.getRotation());
-    if (targetRot != ui.getRotation()) {
-      Serial.printf("[DISPLAY] Auto-Rotate: %u -> %u (%u deg)\n",
-                    ui.getRotation(), targetRot, targetRot * 90);
-      ui.setRotation(targetRot);
-      input.setRotation(targetRot);
-      ui.fullRedraw(engine, imu, power, rtc);
-      p3d.captureSnapshot();
-    }
-
     if (imu.isFlippedDown()) {
+      power.dimForFlipDown();
       // 动作：设备屏幕完全朝下盖在桌面上（完全息屏节能暂停）
       if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
         Serial.println("[POMO] Auto Pause by Flip Down (Screen Dim)");
@@ -210,8 +172,7 @@ void loop() {
           ui.setMode(UI_MODE_POMODORO);
         }
         engine.startFace(face, faceSec);
-        ui.fullRedraw(engine, imu, power, rtc);
-        p3d.captureSnapshot();
+
       } else if ((engine.state == STATE_FOCUS_PAUSED || engine.state == STATE_BREAK_PAUSED) &&
                  engine.pauseReason == PAUSE_BY_FLIP) {
         // 同一个面从暂停中重新立起恢复
@@ -224,6 +185,9 @@ void loop() {
 
   // 7. 轮询触摸与物理按键输入
   UserAction action = input.update();
+  if (action == ACTION_TAP && ui.isAnimating() && !input.lastTapFromButton) {
+    action = ACTION_NONE; // Ignore moving touch targets until rotation settles.
+  }
   if (action == ACTION_TAP) {
     Serial.printf("[USER] Tap Event at (%d, %d)\n", input.lastTapX, input.lastTapY);
 
@@ -234,31 +198,26 @@ void loop() {
         ui.setMode((UIMode)clickedMode);
         Serial.printf("[UI] Mode Switched to %s\n", (clickedMode == UI_MODE_CLOCK) ? "CLOCK" : "POMODORO");
         audio.playClickTone();
-        ui.fullRedraw(engine, imu, power, rtc);
-        p3d.captureSnapshot();
+
       }
-    } else {
-      // 全屏普通点击：番茄钟开始/暂停
+    } else if (input.lastTapFromButton || ui.getMode() == UI_MODE_POMODORO) {
+      // Timer page tap / physical BOOT toggles timer; clock page background is inert.
       if (engine.state == STATE_IDLE || engine.state == STATE_FOCUS_PAUSED || engine.state == STATE_BREAK_PAUSED) {
         audio.playStartTone();
       } else {
         audio.playClickTone();
       }
       engine.toggle();
-      p3d.captureSnapshot();
     }
   } else if (action == ACTION_LONG_PRESS) {
     Serial.println("[USER] Long Press Event -> RESET TIMER");
     audio.playClickTone();
     engine.reset();
-    ui.fullRedraw(engine, imu, power, rtc);
-    p3d.captureSnapshot();
+
   }
 
-  // 8. 驱动非 3D 倾斜状态下的常规零闪烁局部刷新
-  if (!isTilting3D) {
-    ui.update(engine, imu, power, rtc);
-  }
+  // 持续刷新二维界面，翻面方向由姿态事件切换。
+  ui.update(engine, imu, power, rtc);
 
   // 9. 周期性串口遥测输出（每 1 秒打印一次状态）
   if (now - lastTelemetryTime >= 1000) {
@@ -271,5 +230,5 @@ void loop() {
                   power.vbusVoltageMv, power.battVoltageMv, power.batteryPercent);
   }
 
-  delay(10);
+  delay(ui.isAnimating() ? 1 : 10);
 }

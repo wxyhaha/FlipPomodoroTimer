@@ -14,3 +14,6 @@ Thumbs.db
 .vscode/
 .idea/
 .zcode/
+
+# Private per-device configuration
+firmware/FlipPomodoroTimer/WiFiConfig.local.h

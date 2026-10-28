@@ -32,6 +32,8 @@ public:
 
   // 防抖稳定时间（毫秒）
   static constexpr unsigned long STABLE_DURATION_MS = 600;
+  // Display responds sooner than the timer; hysteresis keeps diagonals stable.
+  static constexpr unsigned long VISUAL_STABLE_MS = 100;
 
   bool init(TwoWire &wire = Wire) {
     if (!qmi.begin(wire, QMI8658_L_SLAVE_ADDRESS, BOARD_I2C_SDA, BOARD_I2C_SCL)) {
@@ -51,6 +53,8 @@ public:
     update();
     currentOrientation = candidateOrientation;
     smoothRollAngle = rollAngleDeg;
+    visualRotation = getDisplayRotation(0);
+    visualCandidate = visualRotation;
     return true;
   }
 
@@ -72,6 +76,7 @@ public:
 
     DeviceOrientation rawOri = classifyRawOrientation(ax, ay, az);
     unsigned long now = millis();
+    updateVisualRotation(now);
 
     if (rawOri != candidateOrientation) {
       candidateOrientation = rawOri;
@@ -137,19 +142,8 @@ public:
     }
   }
 
-  // 获取偏离当前稳定方位的倾角偏移（度，用于 3D 透视渲染）
-  float getTiltOffsetDeg(uint8_t baseRotation) const {
-    float targetAngle = 0.0f;
-    switch (baseRotation) {
-      case 0: targetAngle = 0.0f; break;
-      case 1: targetAngle = -90.0f; break;
-      case 2: targetAngle = (smoothRollAngle < 0) ? -180.0f : 180.0f; break;
-      case 3: targetAngle = 90.0f; break;
-    }
-    float diff = smoothRollAngle - targetAngle;
-    while (diff > 180.0f) diff -= 360.0f;
-    while (diff < -180.0f) diff += 360.0f;
-    return diff;
+  uint8_t getVisualRotation(uint8_t fallback = 0) const {
+    return isReady ? visualRotation : fallback;
   }
 
   const char* getOrientationName() const {
@@ -167,6 +161,24 @@ public:
 
 private:
   SensorQMI8658 qmi;
+  uint8_t visualRotation = 0;
+  uint8_t visualCandidate = 0;
+  unsigned long visualCandidateSince = 0;
+
+  void updateVisualRotation(unsigned long now) {
+    uint8_t target = visualRotation;
+    float x = fabsf(ax), y = fabsf(ay);
+    if (fabsf(az) < 0.85f) {
+      if (y > 0.35f && y > x * 1.25f) target = ay > 0 ? 0 : 2;
+      else if (x > 0.35f && x > y * 1.25f) target = ax < 0 ? 1 : 3;
+    }
+    if (target != visualCandidate) {
+      visualCandidate = target;
+      visualCandidateSince = now;
+    } else if (now - visualCandidateSince >= VISUAL_STABLE_MS) {
+      visualRotation = target;
+    }
+  }
 
   DeviceOrientation classifyRawOrientation(float x, float y, float z) {
     // 实际实测物理重力分量特征：
