@@ -6,10 +6,13 @@
 
 enum DeviceOrientation {
   ORIENTATION_UNKNOWN,
-  ORIENTATION_FACE_UP,      // 屏幕朝上（平放看屏）
-  ORIENTATION_FACE_DOWN,    // 屏幕朝下（翻转盖在桌面上）
-  ORIENTATION_UPRIGHT,      // 站立斜放（支架或靠立）
-  ORIENTATION_MOVING        // 移动/晃动中
+  ORIENTATION_FACE_UP,      // 正面平放（屏幕朝上看屏）
+  ORIENTATION_FACE_DOWN,    // 翻转盖下（屏幕贴桌，自动暂停熄屏）
+  ORIENTATION_FACE_1,       // 面一：前倾立面（5分钟短休息/闪电番茄）
+  ORIENTATION_FACE_2,       // 面二：左倾立面（15分钟快速任务）
+  ORIENTATION_FACE_3,       // 面三：后倾立面（25分钟标准番茄）
+  ORIENTATION_FACE_4,       // 面四：右倾立面（45分钟深度专注）
+  ORIENTATION_MOVING        // 拿取/移动防抖中
 };
 
 class IMUSensor {
@@ -72,15 +75,39 @@ public:
   }
 
   bool isDisplayVisible() const {
-    return currentOrientation == ORIENTATION_FACE_UP || currentOrientation == ORIENTATION_UPRIGHT;
+    return currentOrientation != ORIENTATION_FACE_DOWN;
+  }
+
+  bool isTiltedFace() const {
+    return currentOrientation >= ORIENTATION_FACE_1 && currentOrientation <= ORIENTATION_FACE_4;
+  }
+
+  uint8_t getFaceIndex() const {
+    if (currentOrientation >= ORIENTATION_FACE_1 && currentOrientation <= ORIENTATION_FACE_4) {
+      return (uint8_t)(currentOrientation - ORIENTATION_FACE_1 + 1);
+    }
+    return 0;
+  }
+
+  unsigned long getFaceDurationSec() const {
+    switch (currentOrientation) {
+      case ORIENTATION_FACE_1: return 5 * 60;   // 5 分钟
+      case ORIENTATION_FACE_2: return 15 * 60;  // 15 分钟
+      case ORIENTATION_FACE_3: return 25 * 60;  // 25 分钟
+      case ORIENTATION_FACE_4: return 45 * 60;  // 45 分钟
+      default:                 return 25 * 60;
+    }
   }
 
   const char* getOrientationName() const {
     switch (currentOrientation) {
-      case ORIENTATION_FACE_UP:   return "正面朝上";
+      case ORIENTATION_FACE_UP:   return "正面平放";
       case ORIENTATION_FACE_DOWN: return "翻转盖下";
-      case ORIENTATION_UPRIGHT:   return "立式放置";
-      case ORIENTATION_MOVING:    return "拿取/移动中";
+      case ORIENTATION_FACE_1:    return "面一(5分)";
+      case ORIENTATION_FACE_2:    return "面二(15分)";
+      case ORIENTATION_FACE_3:    return "面三(25分)";
+      case ORIENTATION_FACE_4:    return "面四(45分)";
+      case ORIENTATION_MOVING:    return "移动中";
       default:                    return "未知";
     }
   }
@@ -89,15 +116,26 @@ private:
   SensorQMI8658 qmi;
 
   DeviceOrientation classifyRawOrientation(float x, float y, float z) {
-    // 实际实测：平放屏幕朝上时 az 约为 -1.0g
-    // 翻转盖在桌面上时 az 约为 +1.0g
+    // 实际实测物理重力分量特征：
+    // 1. 翻转盖在桌面上（屏幕向下）：az 显著为正值 (约为 +1.0g)
     if (z > 0.45f) {
       return ORIENTATION_FACE_DOWN;
-    } else if (z < -0.40f) {
-      return ORIENTATION_FACE_UP;
-    } else if (abs(y) > 0.45f || abs(x) > 0.45f) {
-      return ORIENTATION_UPRIGHT;
     }
+
+    // 2. 屏幕朝上平放桌面：az 显著为负值 (约为 -0.7g ~ -1.0g)，且 x,y 较小
+    if (z < -0.55f && fabsf(x) < 0.35f && fabsf(y) < 0.35f) {
+      return ORIENTATION_FACE_UP;
+    }
+
+    // 3. 四个侧立面/倾角面：z 轴分量衰减，重力主要落在 x 或 y 轴上
+    if (fabsf(y) >= fabsf(x) && fabsf(y) > 0.40f) {
+      // Y 轴主导
+      return (y < 0.0f) ? ORIENTATION_FACE_1 : ORIENTATION_FACE_3;
+    } else if (fabsf(x) > fabsf(y) && fabsf(x) > 0.40f) {
+      // X 轴主导
+      return (x < 0.0f) ? ORIENTATION_FACE_2 : ORIENTATION_FACE_4;
+    }
+
     return ORIENTATION_MOVING;
   }
 };

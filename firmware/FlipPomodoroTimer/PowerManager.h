@@ -67,11 +67,12 @@ public:
   void setBacklight(uint8_t brightness) {
     targetBrightness = brightness;
     currentBrightness = brightness;
-    // 使用数字电平或模拟输出
+    // 硬件物理特性：GPIO 4 经反相晶体管 Q8 接入升压芯片反馈回路。
+    // 输出 LOW 为 100% 满血最大亮度；输出 HIGH 为关断背光/最低微漏电流。
     if (brightness > 0) {
-      digitalWrite(BOARD_LCD_BACKLIGHT, HIGH);
-    } else {
       digitalWrite(BOARD_LCD_BACKLIGHT, LOW);
+    } else {
+      digitalWrite(BOARD_LCD_BACKLIGHT, HIGH);
     }
   }
 

@@ -32,14 +32,28 @@ public:
   unsigned long lastResumeTimestampMs = 0;
 
   uint16_t completedPomodoros = 0;
+  uint8_t activeFace = 3; // 默认活跃面为面 3 (25 分钟标准番茄)
   bool stateChanged = true;
   bool isAlerting = false;
 
   void begin() {
     state = STATE_IDLE;
     pauseReason = PAUSE_NONE;
+    activeFace = 3;
     currentTotalDurationSec = focusDurationSec;
     elapsedMs = 0;
+    stateChanged = true;
+  }
+
+  void startFace(uint8_t faceIndex, unsigned long durationSec) {
+    activeFace = faceIndex;
+    focusDurationSec = durationSec;
+    currentTotalDurationSec = durationSec;
+    elapsedMs = 0;
+    lastResumeTimestampMs = millis();
+    state = STATE_FOCUS_RUNNING;
+    pauseReason = PAUSE_NONE;
+    isAlerting = false;
     stateChanged = true;
   }
 

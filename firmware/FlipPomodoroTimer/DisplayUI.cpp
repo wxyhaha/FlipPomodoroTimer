@@ -26,6 +26,10 @@ bool DisplayUI::init() {
     return false;
   }
 
+  // 启用 U8g2 字体支持与 UTF-8 解码，确保全中文原生清晰排版
+  gfx->setFont(u8g2_font_unifont_t_chinese4);
+  gfx->setUTF8Print(true);
+
   isReady = true;
   return true;
 }
@@ -34,21 +38,21 @@ void DisplayUI::showBootScreen() {
   if (!isReady) return;
   gfx->fillScreen(UI_COLOR_BG);
 
-  // 绘制居中欢迎画面
+  // 居中欢迎标题
   gfx->setTextColor(UI_COLOR_FOCUS);
-  gfx->setTextSize(4);
-  gfx->setCursor(70, 180);
-  gfx->println("Flip Pomodoro");
+  gfx->setTextSize(3);
+  gfx->setCursor(120, 180);
+  gfx->print("翻转番茄钟");
 
   gfx->setTextColor(UI_COLOR_WHITE);
-  gfx->setTextSize(2);
-  gfx->setCursor(120, 240);
-  gfx->println("Hardware Initializing...");
+  gfx->setTextSize(1);
+  gfx->setCursor(155, 240);
+  gfx->print("硬件系统初始化中...");
 
   gfx->setTextColor(UI_COLOR_MUTED);
-  gfx->setTextSize(2);
-  gfx->setCursor(140, 280);
-  gfx->println("ESP32-S3 4.0\" 480x480");
+  gfx->setTextSize(1);
+  gfx->setCursor(135, 280);
+  gfx->print("ESP32-S3 · 4.0寸 480x480");
 }
 
 void DisplayUI::fullRedraw(const PomodoroEngine &engine, const IMUSensor &imu, const PowerManager &power) {
@@ -73,15 +77,23 @@ void DisplayUI::fullRedraw(const PomodoroEngine &engine, const IMUSensor &imu, c
   }
   drawProgressRing(engine.getProgress(), accentColor, true);
 
-  // 4. 中央时钟与状态
-  drawCenterClock(engine.getRemainingSeconds(), engine.state, engine.completedPomodoros, true);
+  // 4. 中央状态徽章
+  drawCenterBadge(engine.state, engine.activeFace, true);
 
-  // 5. 底部操作说明卡片
+  // 5. 核心时间大数字
+  drawCenterClock(engine.getRemainingSeconds(), true);
+
+  // 6. 副标题与统计
+  drawSubtitle(engine.completedPomodoros, engine.activeFace, true);
+
+  // 7. 底部操作说明卡片
   drawFooterHint(engine.state, engine.pauseReason, true);
 
   // 记录最后状态
   lastState = engine.state;
+  lastActiveFace = engine.activeFace;
   lastSeconds = engine.getRemainingSeconds();
+  lastCompleted = engine.completedPomodoros;
   lastBatteryPercent = power.batteryPercent;
   lastVbusIn = power.vbusIn;
   lastOrientation = imu.currentOrientation;
@@ -91,13 +103,33 @@ void DisplayUI::fullRedraw(const PomodoroEngine &engine, const IMUSensor &imu, c
 void DisplayUI::update(const PomodoroEngine &engine, const IMUSensor &imu, const PowerManager &power) {
   if (!isReady) return;
 
-  // 如果状态发生切换，或者结束报警闪烁状态改变，进行完整重绘
-  if (engine.state != lastState) {
-    fullRedraw(engine, imu, power);
-    return;
+  // 状态改变或活跃面改变时，进行微局部平滑重绘（不清除全屏背景，消除点击跳动）
+  bool stateChanged = (engine.state != lastState);
+  bool faceChanged = (engine.activeFace != lastActiveFace);
+
+  if (stateChanged || faceChanged) {
+    uint16_t accentColor = UI_COLOR_FOCUS;
+    if (engine.state == STATE_BREAK_RUNNING || engine.state == STATE_BREAK_PAUSED) {
+      accentColor = UI_COLOR_BREAK;
+    } else if (engine.state == STATE_FOCUS_PAUSED) {
+      accentColor = UI_COLOR_PAUSED;
+    } else if (engine.state == STATE_COMPLETED) {
+      accentColor = UI_COLOR_COMPLETED;
+    }
+
+    drawCenterBadge(engine.state, engine.activeFace, true);
+    drawProgressRing(engine.getProgress(), accentColor, true);
+    drawCenterClock(engine.getRemainingSeconds(), true);
+    drawSubtitle(engine.completedPomodoros, engine.activeFace, true);
+    drawFooterHint(engine.state, engine.pauseReason, true);
+
+    lastState = engine.state;
+    lastActiveFace = engine.activeFace;
+    lastSeconds = engine.getRemainingSeconds();
+    lastCompleted = engine.completedPomodoros;
   }
 
-  // 状态栏更新（当电量、供电方式或姿态发生改变）
+  // 顶部状态栏局部更新（当电量、供电方式或姿态发生改变）
   if (power.batteryPercent != lastBatteryPercent ||
       power.vbusIn != lastVbusIn ||
       imu.currentOrientation != lastOrientation) {
@@ -107,7 +139,7 @@ void DisplayUI::update(const PomodoroEngine &engine, const IMUSensor &imu, const
     lastOrientation = imu.currentOrientation;
   }
 
-  // 倒计时时间与进度环更新（当秒数改变时）
+  // 倒计时每秒更新（双色直写覆盖，零闪烁）
   unsigned long remSec = engine.getRemainingSeconds();
   if (remSec != lastSeconds) {
     uint16_t accentColor = UI_COLOR_FOCUS;
@@ -120,80 +152,75 @@ void DisplayUI::update(const PomodoroEngine &engine, const IMUSensor &imu, const
     }
 
     drawProgressRing(engine.getProgress(), accentColor, false);
-    drawCenterClock(remSec, engine.state, engine.completedPomodoros, false);
+    drawCenterClock(remSec, false);
     lastSeconds = remSec;
   }
 
-  // 完成提醒状态时的动态呼吸/闪烁反馈
+  // 完成提醒状态时的温和呼吸反馈（仅闪烁徽章，不刷黑屏幕）
   if (engine.isAlerting) {
     unsigned long now = millis();
     if (now - lastAlertBlinkTime >= 500) {
       lastAlertBlinkTime = now;
       alertBlinkState = !alertBlinkState;
       uint16_t blinkColor = alertBlinkState ? UI_COLOR_COMPLETED : UI_COLOR_FOCUS;
-      gfx->fillRoundRect(140, 116, 200, 34, 8, blinkColor);
-      gfx->setTextColor(UI_COLOR_WHITE);
-      gfx->setTextSize(2);
-      gfx->setCursor(160, 125);
-      gfx->print("TIME COMPLETE!");
+      gfx->fillRoundRect(140, 110, 200, 36, 8, blinkColor);
+      gfx->setTextColor(UI_COLOR_WHITE, blinkColor);
+      gfx->setTextSize(1);
+      gfx->setCursor(185, 134);
+      gfx->print("倒计时已完成!");
     }
   }
 }
 
 void DisplayUI::drawStatusBar(const IMUSensor &imu, const PowerManager &power, bool force) {
-  // 仅局部清除顶部状态栏区域 (Y: 12 - 46)
-  gfx->fillRect(20, 12, 440, 36, UI_COLOR_BG);
+  // 局域清除顶部状态栏背景 (Y: 10 - 46)
+  gfx->fillRect(16, 10, 448, 36, UI_COLOR_BG);
 
-  // 左侧：电池/电源图标与文字
-  gfx->setTextSize(2);
+  gfx->setTextSize(1);
+
+  // 1. 左侧：电量与供电状态
   if (power.vbusIn) {
-    // 插入 USB 供电
-    gfx->setTextColor(UI_COLOR_BREAK);
-    gfx->setCursor(24, 22);
+    gfx->setTextColor(UI_COLOR_BREAK, UI_COLOR_BG);
+    gfx->setCursor(24, 32);
     if (power.charging) {
-      gfx->printf("[USB %u%% CHG]", power.batteryPercent > 0 ? power.batteryPercent : 100);
+      gfx->printf("USB供电 · 充电%u%%", power.batteryPercent > 0 ? power.batteryPercent : 100);
     } else {
-      gfx->printf("[USB 5V DC]");
+      gfx->print("USB 5V供电");
     }
   } else {
-    // 纯电池供电
     uint16_t battColor = UI_COLOR_BREAK;
     if (power.batteryPercent < 20) battColor = UI_COLOR_FOCUS;
     else if (power.batteryPercent < 50) battColor = UI_COLOR_PAUSED;
 
-    gfx->setTextColor(battColor);
-    gfx->setCursor(24, 22);
+    gfx->setTextColor(battColor, UI_COLOR_BG);
+    gfx->setCursor(24, 32);
     if (power.batteryConnected) {
-      gfx->printf("[BATT %d%%]", power.batteryPercent);
+      gfx->printf("电池供电 %d%%", power.batteryPercent);
     } else {
-      gfx->print("[NO BATT]");
+      gfx->print("未接电池 (USB)");
     }
   }
 
-  // 中间：标题
-  gfx->setTextColor(UI_COLOR_MUTED);
-  gfx->setCursor(185, 22);
-  gfx->print("FLIP TIMER");
+  // 2. 中间：标题
+  gfx->setTextColor(UI_COLOR_WHITE, UI_COLOR_BG);
+  gfx->setCursor(208, 32);
+  gfx->print("番茄时钟");
 
-  // 右侧：当前姿态胶囊
-  const char *oriText = "平放";
+  // 3. 右侧：姿态指示胶囊 (X: 360 ~ 460)
   uint16_t oriColor = UI_COLOR_ACCENT;
   if (imu.currentOrientation == ORIENTATION_FACE_DOWN) {
-    oriText = "已盖下";
     oriColor = UI_COLOR_PAUSED;
-  } else if (imu.currentOrientation == ORIENTATION_UPRIGHT) {
-    oriText = "立式";
+  } else if (imu.isTiltedFace()) {
     oriColor = UI_COLOR_BREAK;
   } else if (imu.currentOrientation == ORIENTATION_MOVING) {
-    oriText = "移动中";
     oriColor = UI_COLOR_MUTED;
   }
 
-  gfx->fillRoundRect(380, 16, 76, 26, 6, UI_COLOR_CARD);
-  gfx->drawRoundRect(380, 16, 76, 26, 6, UI_COLOR_BORDER);
-  gfx->setTextColor(oriColor);
-  gfx->setCursor(390, 22);
-  gfx->print(oriText);
+  gfx->fillRoundRect(360, 16, 96, 24, 6, UI_COLOR_CARD);
+  gfx->drawRoundRect(360, 16, 96, 24, 6, UI_COLOR_BORDER);
+  gfx->setTextColor(oriColor, UI_COLOR_CARD);
+  gfx->setCursor(372, 33);
+  gfx->print(imu.getOrientationName());
 }
 
 void DisplayUI::drawProgressRing(float progress, uint16_t color, bool force) {
@@ -203,96 +230,117 @@ void DisplayUI::drawProgressRing(float progress, uint16_t color, bool force) {
 
   if (!force && currentDeg == lastProgressDeg) return;
 
-  // 如果进度减少或重置，需要先恢复底轨
+  // 如果进度减少或强制重绘，重绘完整底轨
   if (currentDeg < lastProgressDeg || force) {
     gfx->fillArc(240, 230, 160, 148, 0, 360, UI_COLOR_TRACK);
+    if (currentDeg > 0) {
+      gfx->fillArc(240, 230, 160, 148, 270, 270 + currentDeg, color);
+    }
+  } else if (currentDeg > lastProgressDeg) {
+    // 增量绘制新进度弧段，绝不重复擦除已有弧段，完全无抖动
+    gfx->fillArc(240, 230, 160, 148, 270 + lastProgressDeg, 270 + currentDeg, color);
   }
 
-  if (currentDeg > 0) {
-    gfx->fillArc(240, 230, 160, 148, 270, 270 + currentDeg, color);
-  }
   lastProgressDeg = currentDeg;
 }
 
-void DisplayUI::drawCenterClock(unsigned long remainingSec, TimerState state, uint16_t completed, bool force) {
+void DisplayUI::drawCenterBadge(TimerState state, uint8_t activeFace, bool force) {
+  uint16_t badgeBg = UI_COLOR_FOCUS;
+  const char *badgeText = "专注计时中";
+
+  if (state == STATE_BREAK_RUNNING) {
+    badgeBg = UI_COLOR_BREAK;
+    badgeText = "休息进行中";
+  } else if (state == STATE_FOCUS_PAUSED) {
+    badgeBg = UI_COLOR_PAUSED;
+    badgeText = "专注已暂停";
+  } else if (state == STATE_BREAK_PAUSED) {
+    badgeBg = UI_COLOR_PAUSED;
+    badgeText = "休息已暂停";
+  } else if (state == STATE_COMPLETED) {
+    badgeBg = UI_COLOR_COMPLETED;
+    badgeText = "倒计时完成!";
+  } else if (state == STATE_IDLE) {
+    badgeBg = UI_COLOR_CARD;
+    badgeText = "番茄钟待机";
+  }
+
+  // 局域重绘徽章胶囊
+  gfx->fillRoundRect(140, 110, 200, 36, 8, badgeBg);
+  gfx->setTextSize(1);
+  gfx->setTextColor(UI_COLOR_WHITE, badgeBg);
+
+  // 居中打印 5 个汉字 (5 * 16 = 80 像素宽)
+  gfx->setCursor(200, 134);
+  gfx->print(badgeText);
+}
+
+void DisplayUI::drawCenterClock(unsigned long remainingSec, bool force) {
   unsigned long minutes = remainingSec / 60;
   unsigned long seconds = remainingSec % 60;
 
-  // 1. 状态徽章 (Pill Badge)
-  uint16_t badgeBg = UI_COLOR_FOCUS;
-  const char *badgeText = "FOCUS 专注";
-  if (state == STATE_BREAK_RUNNING) {
-    badgeBg = UI_COLOR_BREAK;
-    badgeText = "BREAK 休息";
-  } else if (state == STATE_FOCUS_PAUSED || state == STATE_BREAK_PAUSED) {
-    badgeBg = UI_COLOR_PAUSED;
-    badgeText = "PAUSED 暂停";
-  } else if (state == STATE_COMPLETED) {
-    badgeBg = UI_COLOR_COMPLETED;
-    badgeText = "COMPLETE 完成";
-  } else if (state == STATE_IDLE) {
-    badgeBg = UI_COLOR_CARD;
-    badgeText = "READY 就绪";
+  char buf[12];
+  snprintf(buf, sizeof(buf), "%02lu:%02lu", minutes, seconds);
+
+  // 双色直写模式：前景色纯白，背景色深蓝底色
+  // 覆盖 160x64 区域，单次绘制完成，无先刷黑再画字的黑屏间隙
+  gfx->setTextSize(4);
+  gfx->setTextColor(UI_COLOR_WHITE, UI_COLOR_BG);
+  gfx->setCursor(160, 246);
+  gfx->print(buf);
+}
+
+void DisplayUI::drawSubtitle(uint16_t completed, uint8_t activeFace, bool force) {
+  // 局部清理副标题文本行
+  gfx->fillRect(100, 275, 280, 24, UI_COLOR_BG);
+
+  gfx->setTextSize(1);
+  gfx->setTextColor(UI_COLOR_MUTED, UI_COLOR_BG);
+
+  char buf[48];
+  if (activeFace >= 1 && activeFace <= 4) {
+    const char *faceNames[] = {"", "面一(5分)", "面二(15分)", "面三(25分)", "面四(45分)"};
+    snprintf(buf, sizeof(buf), "%s · 已完成 %u 轮", faceNames[activeFace], completed);
+  } else {
+    snprintf(buf, sizeof(buf), "已完成 %u 轮专注 · 保持节奏", completed);
   }
 
-  gfx->fillRoundRect(150, 116, 180, 34, 8, badgeBg);
-  gfx->setTextColor(UI_COLOR_WHITE);
-  gfx->setTextSize(2);
-  gfx->setCursor(175, 125);
-  gfx->print(badgeText);
-
-  // 2. 核心大数字时钟 (MM:SS) - 仅清除时钟数字矩形区域以防闪烁
-  gfx->fillRect(120, 180, 240, 60, UI_COLOR_BG);
-  gfx->setTextColor(UI_COLOR_WHITE);
-  gfx->setTextSize(6);
-  gfx->setCursor(150, 185);
-  gfx->printf("%02lu:%02lu", minutes, seconds);
-
-  // 3. 统计副标题
-  gfx->fillRect(130, 260, 220, 30, UI_COLOR_BG);
-  gfx->setTextColor(UI_COLOR_MUTED);
-  gfx->setTextSize(2);
-  gfx->setCursor(150, 265);
-  gfx->printf("番茄 #%u | 完成 %u", completed + 1, completed);
+  gfx->setCursor(140, 292);
+  gfx->print(buf);
 }
 
 void DisplayUI::drawFooterHint(TimerState state, PauseReason reason, bool force) {
-  gfx->fillRect(20, 400, 440, 70, UI_COLOR_BG);
-  gfx->fillRoundRect(24, 405, 432, 60, 12, UI_COLOR_CARD);
-  gfx->drawRoundRect(24, 405, 432, 60, 12, UI_COLOR_BORDER);
+  // 底部卡片背景
+  gfx->fillRoundRect(20, 395, 440, 68, 12, UI_COLOR_CARD);
+  gfx->drawRoundRect(20, 395, 440, 68, 12, UI_COLOR_BORDER);
 
-  gfx->setTextSize(2);
+  gfx->setTextSize(1);
+
+  // 第一行：主要动作提示
   if (state == STATE_FOCUS_RUNNING || state == STATE_BREAK_RUNNING) {
-    gfx->setTextColor(UI_COLOR_WHITE);
-    gfx->setCursor(44, 417);
-    gfx->print("翻转设备朝下: 立即暂停");
-    gfx->setTextColor(UI_COLOR_MUTED);
-    gfx->setCursor(44, 440);
-    gfx->print("轻触屏幕或短按按键: 暂停");
+    gfx->setTextColor(UI_COLOR_WHITE, UI_COLOR_CARD);
+    gfx->setCursor(36, 422);
+    gfx->print("轻触屏幕: 暂停计时   翻转盖下: 息屏暂停");
   } else if (state == STATE_FOCUS_PAUSED || state == STATE_BREAK_PAUSED) {
-    gfx->setTextColor(UI_COLOR_PAUSED);
-    gfx->setCursor(44, 417);
+    gfx->setTextColor(UI_COLOR_PAUSED, UI_COLOR_CARD);
+    gfx->setCursor(36, 422);
     if (reason == PAUSE_BY_FLIP) {
-      gfx->print("已翻转暂停 -> 翻回正面继续");
+      gfx->print("已翻转盖下暂停 -> 翻回正面自动继续");
     } else {
-      gfx->print("已手动暂停 -> 点击屏幕继续");
+      gfx->print("已手动暂停 -> 轻触屏幕继续计时");
     }
-    gfx->setTextColor(UI_COLOR_MUTED);
-    gfx->setCursor(44, 440);
-    gfx->print("长按 BOOT 键 2 秒: 重置");
   } else if (state == STATE_COMPLETED) {
-    gfx->setTextColor(UI_COLOR_COMPLETED);
-    gfx->setCursor(44, 417);
-    gfx->print("番茄已完成! 恭喜专注!");
-    gfx->setTextColor(UI_COLOR_WHITE);
-    gfx->setCursor(44, 440);
-    gfx->print("翻转或轻触屏幕开始下一阶段");
+    gfx->setTextColor(UI_COLOR_COMPLETED, UI_COLOR_CARD);
+    gfx->setCursor(36, 422);
+    gfx->print("倒计时已完成! 轻触屏幕开始下一阶段");
   } else { // STATE_IDLE
-    gfx->setTextColor(UI_COLOR_WHITE);
-    gfx->setCursor(44, 417);
-    gfx->print("翻转设备或轻触屏幕: 开始专注");
-    gfx->setTextColor(UI_COLOR_MUTED);
-    gfx->setCursor(44, 440);
-    gfx->print("短按 BOOT 键即可开始");
+    gfx->setTextColor(UI_COLOR_WHITE, UI_COLOR_CARD);
+    gfx->setCursor(36, 422);
+    gfx->print("轻触屏幕开始 · 立起侧面进入独立倒计时");
   }
+
+  // 第二行：按键与操作指南
+  gfx->setTextColor(UI_COLOR_MUTED, UI_COLOR_CARD);
+  gfx->setCursor(36, 448);
+  gfx->print("四面时长: 5/15/25/45分    长按BOOT: 复位");
 }

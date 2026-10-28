@@ -7,6 +7,10 @@
 #include "IMUSensor.h"
 #include "PowerManager.h"
 
+// 启用 U8g2 字体支持
+#define U8G2_USE_LARGE_FONTS
+#include "font/u8g2_font_unifont_t_chinese4.h"
+
 // 颜色定义 (RGB565)
 #define UI_COLOR_BG           0x0842  // 深蓝夜色背景 (#0A0E17)
 #define UI_COLOR_CARD         0x18C5  // 卡片背景 (#131926)
@@ -35,9 +39,11 @@ private:
   Arduino_ESP32RGBPanel *rgbpanel = nullptr;
   Arduino_RGB_Display *gfx = nullptr;
 
-  // 缓存上一次渲染的状态，用于局部刷新防闪烁
+  // 缓存渲染状态，实现精准局部无闪烁刷新
   TimerState lastState = STATE_IDLE;
+  uint8_t lastActiveFace = 0;
   unsigned long lastSeconds = 999999;
+  uint16_t lastCompleted = 999;
   int lastProgressDeg = -1;
   int lastBatteryPercent = -999;
   bool lastVbusIn = false;
@@ -48,6 +54,8 @@ private:
 
   void drawStatusBar(const IMUSensor &imu, const PowerManager &power, bool force = false);
   void drawProgressRing(float progress, uint16_t color, bool force = false);
-  void drawCenterClock(unsigned long remainingSec, TimerState state, uint16_t completed, bool force = false);
+  void drawCenterBadge(TimerState state, uint8_t activeFace, bool force = false);
+  void drawCenterClock(unsigned long remainingSec, bool force = false);
+  void drawSubtitle(uint16_t completed, uint8_t activeFace, bool force = false);
   void drawFooterHint(TimerState state, PauseReason reason, bool force = false);
 };

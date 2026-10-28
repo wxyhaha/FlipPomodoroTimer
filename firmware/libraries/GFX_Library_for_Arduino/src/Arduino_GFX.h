@@ -17,16 +17,16 @@
 #define DEGTORAD 0.017453292519943295769236907684886F
 #endif
 
+#ifndef U8G2_FONT_SUPPORT
+#define U8G2_FONT_SUPPORT
+#endif
+
+#ifndef U8G2_FONT_SECTION
+#define U8G2_FONT_SECTION(name)
+#endif
+
 #if __has_include(<U8g2lib.h>)
 #include <U8g2lib.h>
-#define U8G2_FONT_SUPPORT
-#include "font/u8g2_font_chill7_h_cjk.h"
-#include "font/u8g2_font_cubic11_h_cjk.h"
-#include "font/u8g2_font_quan7_h_cjk.h"
-#include "font/u8g2_font_unifont_h_utf8.h"
-#include "font/u8g2_font_unifont_t_chinese.h"
-#include "font/u8g2_font_unifont_t_chinese4.h"
-#include "font/u8g2_font_unifont_t_cjk.h"
 #endif
 
 #define RGB565(r, g, b) ((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
