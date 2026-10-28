@@ -18,8 +18,8 @@ enum PauseReason {
 
 class PomodoroEngine {
 public:
-  static constexpr unsigned long DEFAULT_FOCUS_SECONDS = 25 * 60;  // 25 分钟
-  static constexpr unsigned long DEFAULT_BREAK_SECONDS = 5 * 60;   // 5 分钟
+  static constexpr unsigned long DEFAULT_FOCUS_SECONDS = 30 * 60;  // 30 分钟 (面三标准深度专注)
+  static constexpr unsigned long DEFAULT_BREAK_SECONDS = 5 * 60;   // 5 分钟 (短休息)
 
   TimerState state = STATE_IDLE;
   PauseReason pauseReason = PAUSE_NONE;
@@ -32,7 +32,7 @@ public:
   unsigned long lastResumeTimestampMs = 0;
 
   uint16_t completedPomodoros = 0;
-  uint8_t activeFace = 3; // 默认活跃面为面 3 (25 分钟标准番茄)
+  uint8_t activeFace = 3; // 默认活跃面为面 3 (30 分钟标准专注)
   bool stateChanged = true;
   bool isAlerting = false;
 

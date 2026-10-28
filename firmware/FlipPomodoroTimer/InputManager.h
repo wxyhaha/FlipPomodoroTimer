@@ -14,6 +14,8 @@ class InputManager {
 public:
   bool touchReady = false;
   uint8_t currentRotation = 0;
+  int16_t lastTapX = -1;
+  int16_t lastTapY = -1;
 
   void setRotation(uint8_t r) {
     currentRotation = r & 3;
@@ -51,6 +53,8 @@ public:
         btnDown = false;
         if (!btnLongPressedTriggered && (now - btnDownTime >= 50)) {
           // 短按触发
+          lastTapX = 240;
+          lastTapY = 240;
           result = ACTION_TAP;
         }
       }
@@ -64,6 +68,8 @@ public:
       int16_t x[1], y[1];
       uint8_t touched = touch.getPoint(x, y, 1);
       if (touched > 0) {
+        rawX = x[0];
+        rawY = y[0];
         if (!isTouched) {
           isTouched = true;
           touchStartTime = now;
@@ -73,6 +79,8 @@ public:
           isTouched = false;
           // 触摸释放，判断是否为有效点击（50ms ~ 1200ms）
           if (now - touchStartTime >= 50 && now - touchStartTime <= 1200) {
+            // 根据当前屏幕旋转计算显示坐标
+            mapCoordinates(rawX, rawY, lastTapX, lastTapY);
             result = ACTION_TAP;
           }
         }
@@ -93,4 +101,30 @@ private:
   // 触摸状态
   bool isTouched = false;
   unsigned long touchStartTime = 0;
+  int16_t rawX = 0, rawY = 0;
+
+  void mapCoordinates(int16_t inX, int16_t inY, int16_t &outX, int16_t &outY) {
+    switch (currentRotation) {
+      case 0:
+        outX = inX;
+        outY = inY;
+        break;
+      case 1:
+        outX = inY;
+        outY = 479 - inX;
+        break;
+      case 2:
+        outX = 479 - inX;
+        outY = 479 - inY;
+        break;
+      case 3:
+        outX = 479 - inY;
+        outY = inX;
+        break;
+      default:
+        outX = inX;
+        outY = inY;
+        break;
+    }
+  }
 };

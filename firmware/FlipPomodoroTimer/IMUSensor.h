@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <Wire.h>
+#include <math.h>
 #include "pin_config.h"
 #include "SensorQMI8658.hpp"
 
@@ -9,9 +10,9 @@ enum DeviceOrientation {
   ORIENTATION_BACKWARD_PAUSE, // 向后翻转平放（屏幕朝上仰卧桌面，向后翻转暂停）
   ORIENTATION_FACE_DOWN,      // 翻转盖在桌面上（屏幕朝下盖下，完全息屏节能暂停）
   ORIENTATION_FACE_1,         // 面一：上边着台（5分钟短休息/闪电番茄）
-  ORIENTATION_FACE_2,         // 面二：左边着台（15分钟快速任务）
-  ORIENTATION_FACE_3,         // 面三：下边着台（25分钟标准番茄）
-  ORIENTATION_FACE_4,         // 面四：右边着台（45分钟深度专注）
+  ORIENTATION_FACE_2,         // 面二：左边着台（10分钟快速任务）
+  ORIENTATION_FACE_3,         // 面三：下边着台（30分钟深度番茄）
+  ORIENTATION_FACE_4,         // 面四：右边着台（60分钟长程专注）
   ORIENTATION_MOVING          // 拿取/移动防抖中
 };
 
@@ -25,6 +26,10 @@ public:
   DeviceOrientation candidateOrientation = ORIENTATION_FACE_3;
   unsigned long candidateStartTime = 0;
 
+  // 连续滚转角（度，-180 ~ +180）与平滑滤波
+  float rollAngleDeg = 0.0f;
+  float smoothRollAngle = 0.0f;
+
   // 防抖稳定时间（毫秒）
   static constexpr unsigned long STABLE_DURATION_MS = 600;
 
@@ -33,14 +38,19 @@ public:
       isReady = false;
       return false;
     }
-    // 配置加速度计与低通滤波
+    // 配置加速度计与陀螺仪
     qmi.configAccelerometer(SensorQMI8658::ACC_RANGE_4G, SensorQMI8658::ACC_ODR_125Hz, SensorQMI8658::LPF_MODE_0);
     qmi.enableAccelerometer();
+
+    qmi.configGyroscope(SensorQMI8658::GYR_RANGE_512DPS, SensorQMI8658::GYR_ODR_112_1Hz, SensorQMI8658::LPF_MODE_0);
+    qmi.enableGyroscope();
+
     isReady = true;
 
     // 读取初始姿态
     update();
     currentOrientation = candidateOrientation;
+    smoothRollAngle = rollAngleDeg;
     return true;
   }
 
@@ -50,6 +60,14 @@ public:
 
     if (!qmi.getAccelerometer(ax, ay, az)) {
       return false;
+    }
+    qmi.getGyroscope(gx, gy, gz);
+
+    // 计算当前在屏幕平面的重力倾角
+    if (fabsf(ax) > 0.1f || fabsf(ay) > 0.1f) {
+      rollAngleDeg = atan2f(ax, ay) * (180.0f / 3.14159265f);
+      // 平滑滤波
+      smoothRollAngle += (rollAngleDeg - smoothRollAngle) * 0.25f;
     }
 
     DeviceOrientation rawOri = classifyRawOrientation(ax, ay, az);
@@ -97,25 +115,41 @@ public:
     return 0;
   }
 
+  // 视频经典四面时长配置：5 / 10 / 30 / 60 分钟
   unsigned long getFaceDurationSec() const {
     switch (currentOrientation) {
-      case ORIENTATION_FACE_1: return 5 * 60;   // 5 分钟
-      case ORIENTATION_FACE_2: return 15 * 60;  // 15 分钟
-      case ORIENTATION_FACE_3: return 25 * 60;  // 25 分钟
-      case ORIENTATION_FACE_4: return 45 * 60;  // 45 分钟
-      default:                 return 25 * 60;
+      case ORIENTATION_FACE_1: return 5 * 60;   // 5 分钟 (顶边着台)
+      case ORIENTATION_FACE_2: return 10 * 60;  // 10 分钟 (左边着台)
+      case ORIENTATION_FACE_3: return 30 * 60;  // 30 分钟 (底边着台，标准深度专注)
+      case ORIENTATION_FACE_4: return 60 * 60;  // 60 分钟 (右边着台，长程学习)
+      default:                 return 30 * 60;
     }
   }
 
   // 根据当前重力加速度计算自适应屏幕旋转方向 (0: 0°, 1: 90° CW, 2: 180°, 3: 270° CW)
   uint8_t getDisplayRotation(uint8_t fallbackRotation = 0) const {
     switch (currentOrientation) {
-      case ORIENTATION_FACE_3: return 0; // 下边着台 (正常正向)
-      case ORIENTATION_FACE_2: return 1; // 左边着台 (顺时针90°)
-      case ORIENTATION_FACE_1: return 2; // 上边着台 (180°倒置)
-      case ORIENTATION_FACE_4: return 3; // 右边着台 (顺时针270°)
+      case ORIENTATION_FACE_3: return 0; // 下边着台 (正常正向，30分)
+      case ORIENTATION_FACE_2: return 1; // 左边着台 (顺时针90°，10分)
+      case ORIENTATION_FACE_1: return 2; // 上边着台 (180°倒置，5分)
+      case ORIENTATION_FACE_4: return 3; // 右边着台 (顺时针270°，60分)
       default:                 return fallbackRotation; // 向后翻平或移动中保持当前屏幕方向
     }
+  }
+
+  // 获取偏离当前稳定方位的倾角偏移（度，用于 3D 透视渲染）
+  float getTiltOffsetDeg(uint8_t baseRotation) const {
+    float targetAngle = 0.0f;
+    switch (baseRotation) {
+      case 0: targetAngle = 0.0f; break;
+      case 1: targetAngle = -90.0f; break;
+      case 2: targetAngle = (smoothRollAngle < 0) ? -180.0f : 180.0f; break;
+      case 3: targetAngle = 90.0f; break;
+    }
+    float diff = smoothRollAngle - targetAngle;
+    while (diff > 180.0f) diff -= 360.0f;
+    while (diff < -180.0f) diff += 360.0f;
+    return diff;
   }
 
   const char* getOrientationName() const {
@@ -123,9 +157,9 @@ public:
       case ORIENTATION_BACKWARD_PAUSE: return "向后翻平(暂停)";
       case ORIENTATION_FACE_DOWN:      return "翻转盖下(息屏)";
       case ORIENTATION_FACE_1:         return "面一(5分)";
-      case ORIENTATION_FACE_2:         return "面二(15分)";
-      case ORIENTATION_FACE_3:         return "面三(25分)";
-      case ORIENTATION_FACE_4:         return "面四(45分)";
+      case ORIENTATION_FACE_2:         return "面二(10分)";
+      case ORIENTATION_FACE_3:         return "面三(30分)";
+      case ORIENTATION_FACE_4:         return "面四(60分)";
       case ORIENTATION_MOVING:         return "移动防抖中";
       default:                         return "未知姿态";
     }
@@ -148,10 +182,10 @@ private:
 
     // 3. 四个侧立面/倾角面：z 轴分量衰减，重力主要落在 x 或 y 轴上
     if (fabsf(y) >= fabsf(x) && fabsf(y) > 0.35f) {
-      // Y 轴主导：y > 0 为下边着台（面三），y < 0 为上边着台（面一）
+      // Y 轴主导：y > 0 为下边着台（面三 30分），y < 0 为上边着台（面一 5分）
       return (y > 0.0f) ? ORIENTATION_FACE_3 : ORIENTATION_FACE_1;
     } else if (fabsf(x) > fabsf(y) && fabsf(x) > 0.35f) {
-      // X 轴主导：x < 0 为左边着台（面二），x > 0 为右边着台（面四）
+      // X 轴主导：x < 0 为左边着台（面二 10分），x > 0 为右边着台（面四 60分）
       return (x < 0.0f) ? ORIENTATION_FACE_2 : ORIENTATION_FACE_4;
     }
 
