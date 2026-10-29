@@ -105,12 +105,22 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // 1. 推进单调时钟计时器与完成提示音
-  TimerState prevState = engine.state;
+  // Sound cues are dispatched once, after all state changes in this loop.
+  TimerState stateAtLoopStart = engine.state;
+  uint8_t faceAtLoopStart = engine.activeFace;
   engine.tick(now);
-  if (prevState != STATE_COMPLETED && engine.state == STATE_COMPLETED) {
-    Serial.println("[ALERT] Countdown Finished! Ringing loud chime.");
-    audio.playCompletionChime();
+
+  // Optional serial speaker check; no changes to timer duration/state.
+  static char command[24] = {};
+  static uint8_t commandLength = 0;
+  for (int budget = 0; budget < 32 && Serial.available(); ++budget) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      command[commandLength] = 0;
+      if (!strcmp(command, "AUDIO_TEST")) audio.playTest();
+      commandLength = 0;
+    } else if (commandLength < sizeof(command) - 1) command[commandLength++] = c;
+    else commandLength = 0;
   }
 
   // 2. 轮询电源状态（USB 插拔、电量）
@@ -166,7 +176,6 @@ void loop() {
       // 如果立到了新的面，或者之前在待机/完成状态，切换到对应面独立倒计时
       if (engine.activeFace != face || engine.state == STATE_IDLE || engine.state == STATE_COMPLETED) {
         Serial.printf("[POMO] Tilt to New Face %u (%lu sec) -> Start Timer!\n", face, faceSec);
-        audio.playStartTone();
         // 如果当前在时钟模式，翻面自动切回番茄倒计时模式
         if (ui.getMode() != UI_MODE_POMODORO) {
           ui.setMode(UI_MODE_POMODORO);
@@ -177,7 +186,6 @@ void loop() {
                  engine.pauseReason == PAUSE_BY_FLIP) {
         // 同一个面从暂停中重新立起恢复
         Serial.printf("[POMO] Tilt back to Same Face %u -> Resume Timer!\n", face);
-        audio.playStartTone();
         engine.resume();
       }
     }
@@ -202,18 +210,24 @@ void loop() {
       }
     } else if (input.lastTapFromButton || ui.getMode() == UI_MODE_POMODORO) {
       // Timer page tap / physical BOOT toggles timer; clock page background is inert.
-      if (engine.state == STATE_IDLE || engine.state == STATE_FOCUS_PAUSED || engine.state == STATE_BREAK_PAUSED) {
-        audio.playStartTone();
-      } else {
-        audio.playClickTone();
-      }
       engine.toggle();
+      if (engine.state != STATE_FOCUS_RUNNING && engine.state != STATE_BREAK_RUNNING) audio.playClickTone();
     }
   } else if (action == ACTION_LONG_PRESS) {
     Serial.println("[USER] Long Press Event -> RESET TIMER");
+    audio.stop();
     audio.playClickTone();
     engine.reset();
 
+  }
+
+  bool wasRunning = stateAtLoopStart == STATE_FOCUS_RUNNING || stateAtLoopStart == STATE_BREAK_RUNNING;
+  bool running = engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING;
+  if (stateAtLoopStart == STATE_COMPLETED && engine.state != STATE_COMPLETED) audio.stopCompletion();
+  if (running && (!wasRunning || engine.activeFace != faceAtLoopStart)) audio.playStartTone();
+  if (engine.state == STATE_COMPLETED && stateAtLoopStart != STATE_COMPLETED) {
+    Serial.println("[ALERT] Countdown finished; queue 2.6 second completion cue");
+    audio.playCompletionChime();
   }
 
   // 持续刷新二维界面，翻面方向由姿态事件切换。

@@ -14,6 +14,8 @@
 - 移除 3D 透视与明暗变形。静止时只重画变化的数字区域，使用两个驱动帧缓冲及 SDK 帧释放回调交接；不再每秒重传整张画面到前缓冲。
 - 翻面加入目标 240ms 的平面旋转过渡，快速连续翻面时转向最新方向；动画末帧使用整数坐标。动画用临时小纹理降低计算与复制开销，落位恢复原生清晰画面；实际时长与帧数由诊断记录，未承诺固定帧率。
 - 屏幕方向使用 100ms 候选稳定时间及 1.25 倍轴向优势判断，计时面识别仍保持 600ms 防抖。实际响应还受主循环、绘制和提示音耗时影响。
+- 开始/恢复/换面计时播放 225ms 短提示；完成时播放一次 2.6 秒长提示。音频在后台播放，确认完成或开始新计时可取消旧提醒，详情见[提示音文档](docs/AUDIO.md)。
+- 修正 LCD/功放共用 TCA9554 的构造参数和 I2C 地址；用户已确认画面与测试提示音正常，拔掉 USB 再插回也能显示。完整计时到期与提示音抢占场景仍待覆盖。
 
 ## 操作
 
@@ -52,6 +54,7 @@
 - [V6 实现与验收记录](docs/UI-V6-VALIDATION.md)
 - [V5 历史实现记录](docs/UI-V5-VALIDATION.md)
 - [本地依赖补丁](firmware/libraries/LOCAL_PATCHES.md)
+- [开始与完成提示音](docs/AUDIO.md)：短开始音、长完成音与喇叭测试方法。
 - [官方资料摘录](docs/ESP32-S3-Touch-LCD-4B官方资料.md)
 - [微雪官方 Wiki](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B)
 
@@ -77,10 +80,10 @@
 arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi,LoopCore=1,EventsCore=1,EraseFlash=none --libraries "firmware/libraries" "firmware/FlipPomodoroTimer"
 ```
 
-编译成功输出示例：
+本轮提示音及 LCD 初始化修正版编译输出：
 ```text
-Sketch uses 1320307 bytes (41%) of program storage space. Maximum is 3145728 bytes.
-Global variables use 48348 bytes (14%) of dynamic memory, leaving 279332 bytes for local variables. Maximum is 327680 bytes.
+Sketch uses 1497275 bytes (47%) of program storage space. Maximum is 3145728 bytes.
+Global variables use 49020 bytes (14%) of dynamic memory, leaving 278660 bytes for local variables. Maximum is 327680 bytes.
 ```
 
 ### 3. 烧录固件到开发板

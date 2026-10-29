@@ -54,9 +54,17 @@ bool paused(TimerState state) {
 
 bool DisplayUI::init() {
   Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
+  // Constructor order is rst, cs, sck, mosi, wire, address (not cs first).
+  // A warm panel may retain its configuration and hide an incorrect bus setup.
+  Wire.beginTransmission(BOARD_EXPANDER_ADDRESS);
+  if (Wire.endTransmission() != 0) {
+    Serial.println("[UI] TCA9554 at 0x20 not responding");
+    return false;
+  }
   expander = new Arduino_XCA9554SWSPI(
-      BOARD_EXPANDER_LCD_CS, BOARD_EXPANDER_LCD_SCL, BOARD_EXPANDER_LCD_SDA,
-      BOARD_EXPANDER_ADDRESS, &Wire);
+      BOARD_EXPANDER_LCD_RST, BOARD_EXPANDER_LCD_CS,
+      BOARD_EXPANDER_LCD_SCL, BOARD_EXPANDER_LCD_SDA,
+      &Wire, BOARD_EXPANDER_ADDRESS);
   auto *panel = new Arduino_ESP32RGBPanel(
       BOARD_LCD_DE, BOARD_LCD_VSYNC, BOARD_LCD_HSYNC, BOARD_LCD_PCLK,
       BOARD_LCD_R0, BOARD_LCD_R1, BOARD_LCD_R2, BOARD_LCD_R3, BOARD_LCD_R4,
