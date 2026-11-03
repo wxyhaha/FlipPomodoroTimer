@@ -2,6 +2,8 @@
 from pathlib import Path
 import zipfile
 import shutil
+import subprocess
+import sys
 import numpy as np
 import trimesh
 from PIL import Image, ImageDraw, ImageFont
@@ -60,6 +62,15 @@ for name in ['mesh-report.json','screen-check.json','retainer-removal-check.json
     shutil.copy2(ROOT/name,RELEASE/name)
 for name in ['PRINTING-V12.md','SCREEN-OPENING-CHECK.md','FINAL-DIMENSIONS-V12.9.md','screen-opening-template.svg']:
     shutil.copy2(ROOT.parent/name,RELEASE/name)
+subprocess.run([sys.executable,str(RELEASE/'render_details.py')],check=True)
+print_doc=RELEASE/'PRINTING-V12.md'
+doc_text=print_doc.read_text(encoding='utf-8')
+doc_text=doc_text.replace('`v12.9/V12.9-','`V12.9-')
+doc_text=doc_text.replace('(v12.9/)', '(.)')
+doc_text=doc_text.replace('(v12.9/details.png)','(details.png)')
+doc_text=doc_text.replace('(v12.9/render_details.py)','(render_details.py)')
+doc_text=doc_text.replace('(v12.9/preview.png)','(preview.png)')
+print_doc.write_text(doc_text,encoding='utf-8')
 with zipfile.ZipFile(RELEASE/'print-package-v12-9.zip','w',zipfile.ZIP_DEFLATED) as archive:
     for path in RELEASE.iterdir():
         if path.suffix!='.zip':archive.write(path,path.name)
