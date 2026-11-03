@@ -1,0 +1,104 @@
+{
+  "version": "V12.9",
+  "front_tongues_mm": {
+    "count": 2,
+    "free_length": 3,
+    "rail_thickness": 2,
+    "outer_projection": 1,
+    "tongue_width": 6,
+    "tongue_height": 1.2,
+    "through_slot_width": 6.6,
+    "through_slot_height": 2.4,
+    "side_clearance_each": 0.3,
+    "upper_clearance": 0.2,
+    "lower_assembly_relief": 1.0
+  },
+  "rear_guides_mm": {
+    "count": 2,
+    "panel_edge_overlap": 2,
+    "depth": 2,
+    "rear_gap": 0.2,
+    "entry_chamfer": 0.3
+  },
+  "panel_recess_mm": 3.0,
+  "left_stop_mm": {
+    "count": 2,
+    "width": 1.95,
+    "panel_edge_coverage_each": 4,
+    "center_open_height": 78.5,
+    "edge_gap": 0.05
+  },
+  "panel_front_gap_mm": 0.2,
+  "panel_rear_gap_mm": 0.2,
+  "panel_slot_depth_mm": 14.899999999999999,
+  "panel_vertical_gap_mm": 0.2,
+  "panel_slot_height_mm": 86.9,
+  "front_to_rear_clear_rays": 9,
+  "shell": {
+    "watertight": true,
+    "components": 1,
+    "bounds_mm": [
+      [
+        -2.0,
+        0.0,
+        -3.0
+      ],
+      [
+        88.5,
+        90.5,
+        89.5
+      ]
+    ],
+    "volume_mm3": 103682.90317869915,
+    "triangles": 4400
+  },
+  "lid": {
+    "watertight": true,
+    "components": 1,
+    "bounds_mm": [
+      [
+        -2.0,
+        88.5,
+        -3.0
+      ],
+      [
+        88.5,
+        94.5,
+        89.5
+      ]
+    ],
+    "volume_mm3": 33370.31035801001,
+    "triangles": 3112
+  },
+  "retainer": {
+    "watertight": true,
+    "components": 1,
+    "bounds_mm": [
+      [
+        18.5,
+        27.200000762939453,
+        5.199999809265137
+      ],
+      [
+        68.5,
+        85.0,
+        24.5
+      ]
+    ],
+    "volume_mm3": 2711.482824193401,
+    "triangles": 552
+  },
+  "shell/lid_overlap_mm3": -2.6469104685844513e-13,
+  "shell/retainer_overlap_mm3": -3.9968028886505635e-15,
+  "lid/retainer_overlap_mm3": 0.0,
+  "shell/panel_overlap_mm3": 0,
+  "shell/battery_overlap_mm3": 0,
+  "lid/panel_overlap_mm3": 0,
+  "lid/battery_overlap_mm3": 0,
+  "retainer/panel_overlap_mm3": 0,
+  "retainer/battery_overlap_mm3": 0,
+  "left_shift_0_2mm_collision_mm3": 17.400000000000002,
+  "right_insertion_checks_passed": 3,
+  "rear_shift_check_mm": 0.35,
+  "rear_shift_guide_collision_mm3": 51.900000000000986
+}

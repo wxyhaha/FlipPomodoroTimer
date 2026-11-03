@@ -13,7 +13,8 @@ enum TimerState {
 enum PauseReason {
   PAUSE_NONE,
   PAUSE_BY_FLIP,        // 由翻转动作触发暂停
-  PAUSE_BY_USER         // 由用户按键/触摸手动暂停
+  PAUSE_BY_USER,        // 由用户按键/触摸手动暂停
+  PAUSE_BY_USB          // USB 接入后自动暂停并切换到时钟页
 };
 
 class PomodoroEngine {

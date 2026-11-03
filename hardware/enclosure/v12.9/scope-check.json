@@ -1,0 +1,52 @@
+{
+  "version": "V12.9",
+  "allowed_regions_xyz_mm": [
+    [
+      [
+        20,
+        26.9,
+        4
+      ],
+      [
+        27,
+        30.9,
+        7
+      ]
+    ],
+    [
+      [
+        60,
+        26.9,
+        4
+      ],
+      [
+        67,
+        30.9,
+        7
+      ]
+    ]
+  ],
+  "parts": {
+    "shell": {
+      "baseline_version": "V12.8",
+      "baseline_sha256": "f464980b176bcc7215d5fb3448586bdb05d6c29459e7628843d968ecf5e90e63",
+      "new_sha256": "5e2ccbd08b43df750557b1fe9385735486543a47700d8d5a175e86e0cd4f2c18",
+      "changed_volume_mm3": 44.35197398757963,
+      "changed_outside_front_slots_and_tongues_mm3": 0
+    },
+    "lid": {
+      "baseline_version": "V12.8",
+      "baseline_sha256": "9bb66e0736d019bc9fb544ccf06d4dfda111d009f2f030f0c37defdf1d6a9967",
+      "new_sha256": "9bb66e0736d019bc9fb544ccf06d4dfda111d009f2f030f0c37defdf1d6a9967",
+      "changed_volume_mm3": 0,
+      "changed_outside_front_slots_and_tongues_mm3": 0
+    },
+    "retainer": {
+      "baseline_version": "V12.8",
+      "baseline_sha256": "7f302f5efb5cd1081cc4e93a53f0439285b5c5467fa3c1cf77bf4b325f488c04",
+      "new_sha256": "2e102e9a4575123bbfd9db245dfa04053d5c0c54a6da274907220fefa3749e82",
+      "changed_volume_mm3": 31.67999107360447,
+      "changed_outside_front_slots_and_tongues_mm3": 0
+    }
+  }
+}

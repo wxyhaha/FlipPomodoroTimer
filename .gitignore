@@ -1,4 +1,5 @@
 # Build artifacts
+.venv-cad/
 build/
 .pio/
 *.bin

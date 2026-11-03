@@ -1,0 +1,11 @@
+{
+  "version": "V12.9",
+  "assumptions": [
+    "Panel and lid removed before extraction.",
+    "Battery represented as 66.7mm long, 20mm thick capsule of width37.3mm; actual wrapping not modeled."
+  ],
+  "sampled_poses": 1071,
+  "max_overlap_mm3": 9.325873406851315e-15,
+  "status": "sampled geometric route clear; not physical assembly validation",
+  "sequence": "Remove lid and panel, loosen two retainer screws, gradually tip and retreat retainer; lift and withdraw through rear opening. Reverse order to install battery retainer before panel."
+}

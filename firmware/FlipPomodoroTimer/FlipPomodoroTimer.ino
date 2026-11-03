@@ -24,6 +24,33 @@ AudioManager audio;
 RTCManager rtc;
 
 unsigned long lastTelemetryTime = 0;
+bool stableVbusIn = false;
+bool candidateVbusIn = false;
+unsigned long vbusCandidateSince = 0;
+constexpr unsigned long USB_MODE_DEBOUNCE_MS = 1000;
+
+void updateUsbMode(unsigned long now) {
+  if (power.vbusIn != candidateVbusIn) {
+    candidateVbusIn = power.vbusIn;
+    vbusCandidateSince = now;
+  }
+
+  if (candidateVbusIn == stableVbusIn || now - vbusCandidateSince < USB_MODE_DEBOUNCE_MS) return;
+
+  stableVbusIn = candidateVbusIn;
+  if (stableVbusIn) {
+    if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
+      engine.pause(PAUSE_BY_USB);
+      audio.stop();
+      Serial.printf("[POMO] Auto Pause by USB; keep %lu seconds\n", engine.getRemainingSeconds());
+    }
+    ui.setMode(UI_MODE_CLOCK);
+    Serial.println("[POWER] Stable USB input -> Clock page");
+  } else {
+    ui.setMode(UI_MODE_POMODORO);
+    Serial.println("[POWER] USB input removed -> Pomodoro page (timer stays paused)");
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -90,6 +117,11 @@ void setup() {
   // 9. 初始化番茄钟状态机
   engine.begin();
 
+  // Startup page follows the current USB input; timer state remains independent.
+  stableVbusIn = candidateVbusIn = power.vbusIn;
+  vbusCandidateSince = millis();
+  ui.setMode(stableVbusIn ? UI_MODE_CLOCK : UI_MODE_POMODORO);
+
   // 根据启动时的初始姿态自动校准屏幕显示方向
   uint8_t initialRotation = imu.getDisplayRotation(0);
   ui.setRotation(initialRotation);
@@ -99,7 +131,7 @@ void setup() {
 
   // 首次完整绘制拟真科技感全界面
   ui.fullRedraw(engine, imu, power, rtc);
-  Serial.println("System Ready! UI V6.1 - fast 2D rotation, native digits, frame-release double buffer.\n");
+  Serial.println("System Ready! UI V6.2 - full panel off, PWRKEY double-click shutdown.\n");
 }
 
 void loop() {
@@ -125,6 +157,12 @@ void loop() {
 
   // 2. 轮询电源状态（USB 插拔、电量）
   power.update();
+  if (power.updatePowerKeyDoubleClick(now)) {
+    Serial.println("[POWER] PWRKEY double-click -> full shutdown");
+    audio.stop();
+    power.shutdown();
+  }
+  updateUsbMode(now);
 
   // 3. 推进硬件 RTC 时间走时
   rtc.update(now);
@@ -146,20 +184,18 @@ void loop() {
                   imu.getOrientationName(), imu.ax, imu.ay, imu.az, imu.smoothRollAngle);
 
     if (imu.isFlippedDown()) {
-      power.dimForFlipDown();
-      // 动作：设备屏幕完全朝下盖在桌面上（完全息屏节能暂停）
+      ui.setPanelOutputOff(true, power);
+      // 动作：设备屏幕完全朝下盖在桌面上，关闭显示输出并暂停计时。
       if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
-        Serial.println("[POMO] Auto Pause by Flip Down (Screen Dim)");
+        Serial.println("[POMO] Auto Pause by Flip Down (Panel Off)");
         engine.pause(PAUSE_BY_FLIP);
-        power.dimForFlipDown();
       } else if (engine.state == STATE_COMPLETED) {
         Serial.println("[POMO] Confirm Completed by Flip Down");
         engine.confirmCompleted();
-        power.dimForFlipDown();
       }
     } else if (imu.isBackwardPaused()) {
       // 动作：向后翻转平放在桌面上（用户核心需求：向后翻转暂停，保持 100% 满血高亮以便看清状态）
-      power.restoreFromFlipUp();
+      if (!ui.isManualScreenOff()) ui.setPanelOutputOff(false, power);
       if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
         Serial.println("[POMO] Auto Pause by Backward Flip!");
         engine.pause(PAUSE_BY_FLIP);
@@ -169,12 +205,14 @@ void loop() {
       }
     } else if (imu.isTiltedFace()) {
       // 动作：设备立在 4 个侧立面之一
-      power.restoreFromFlipUp();
+      if (!ui.isManualScreenOff()) ui.setPanelOutputOff(false, power);
       uint8_t face = imu.getFaceIndex();
       unsigned long faceSec = imu.getFaceDurationSec();
 
       // 如果立到了新的面，或者之前在待机/完成状态，切换到对应面独立倒计时
-      if (engine.activeFace != face || engine.state == STATE_IDLE || engine.state == STATE_COMPLETED) {
+      if (stableVbusIn && (ui.getMode() == UI_MODE_CLOCK || engine.pauseReason == PAUSE_BY_USB)) {
+        // USB 时钟模式下不启动隐藏倒计时；自动暂停期间移动也不覆盖剩余时间。
+      } else if (engine.activeFace != face || engine.state == STATE_IDLE || engine.state == STATE_COMPLETED) {
         Serial.printf("[POMO] Tilt to New Face %u (%lu sec) -> Start Timer!\n", face, faceSec);
         // 如果当前在时钟模式，翻面自动切回番茄倒计时模式
         if (ui.getMode() != UI_MODE_POMODORO) {
@@ -199,19 +237,28 @@ void loop() {
   if (action == ACTION_TAP) {
     Serial.printf("[USER] Tap Event at (%d, %d)\n", input.lastTapX, input.lastTapY);
 
-    // 检查是否点击了顶部模式徽章
-    int clickedMode = ui.checkBadgeClick(input.lastTapX, input.lastTapY);
-    if (clickedMode >= 0) {
-      if (clickedMode != (int)ui.getMode()) {
-        ui.setMode((UIMode)clickedMode);
-        Serial.printf("[UI] Mode Switched to %s\n", (clickedMode == UI_MODE_CLOCK) ? "CLOCK" : "POMODORO");
-        audio.playClickTone();
-
+    // A tap while blank only wakes the display; it must not also toggle the timer.
+    if (ui.isManualScreenOff()) {
+      ui.setManualScreenOff(false);
+      if (!imu.isFlippedDown()) ui.setPanelOutputOff(false, power);
+      Serial.println("[UI] Wake display by touch");
+    } else if (ui.checkScreenOffClick(input.lastTapX, input.lastTapY)) {
+      ui.setManualScreenOff(true);
+      ui.setPanelOutputOff(true, power);
+      Serial.println("[UI] Manual panel off; tap anywhere to wake");
+    } else {
+      int clickedMode = ui.checkBadgeClick(input.lastTapX, input.lastTapY);
+      if (clickedMode >= 0 && !input.lastTapFromButton) {
+        if (clickedMode != (int)ui.getMode()) {
+          ui.setMode((UIMode)clickedMode);
+          Serial.printf("[UI] Mode Switched to %s\n", (clickedMode == UI_MODE_CLOCK) ? "CLOCK" : "POMODORO");
+          audio.playClickTone();
+        }
+      } else if (input.lastTapFromButton || ui.getMode() == UI_MODE_POMODORO) {
+        // Timer page tap / physical BOOT toggles timer; clock page background is inert.
+        engine.toggle();
+        if (engine.state != STATE_FOCUS_RUNNING && engine.state != STATE_BREAK_RUNNING) audio.playClickTone();
       }
-    } else if (input.lastTapFromButton || ui.getMode() == UI_MODE_POMODORO) {
-      // Timer page tap / physical BOOT toggles timer; clock page background is inert.
-      engine.toggle();
-      if (engine.state != STATE_FOCUS_RUNNING && engine.state != STATE_BREAK_RUNNING) audio.playClickTone();
     }
   } else if (action == ACTION_LONG_PRESS) {
     Serial.println("[USER] Long Press Event -> RESET TIMER");
@@ -226,7 +273,7 @@ void loop() {
   if (stateAtLoopStart == STATE_COMPLETED && engine.state != STATE_COMPLETED) audio.stopCompletion();
   if (running && (!wasRunning || engine.activeFace != faceAtLoopStart)) audio.playStartTone();
   if (engine.state == STATE_COMPLETED && stateAtLoopStart != STATE_COMPLETED) {
-    Serial.println("[ALERT] Countdown finished; queue 2.6 second completion cue");
+    Serial.println("[ALERT] Countdown finished; queue 2.1 second soft piano cue");
     audio.playCompletionChime();
   }
 

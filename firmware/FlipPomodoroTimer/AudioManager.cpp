@@ -1,4 +1,5 @@
 #include "AudioManager.h"
+#include "PianoAudio.h"
 #include <math.h>
 
 bool AudioManager::startWorker() {
@@ -11,7 +12,7 @@ bool AudioManager::startWorker() {
     return false;
   }
   isReady = true;
-  Serial.println("[AUDIO] async ready: start=225ms, completion=2600ms");
+  Serial.println("[AUDIO] soft piano ready: start=1030ms, completion=2100ms");
   return true;
 }
 
@@ -89,19 +90,34 @@ bool AudioManager::sequence(const Segment *segments, size_t count, uint32_t id) 
   return true;
 }
 
+bool AudioManager::playPcm(const int16_t *samples, size_t count, uint32_t id) {
+  static_assert(PianoAudio::kSampleRate == 16000, "PCM and I2S rates must match");
+  int16_t stereo[128 * 2];
+  for (size_t position = 0; position < count;) {
+    if (!current(id)) return false;
+    size_t batch = min(static_cast<size_t>(128), count - position);
+    for (size_t i = 0; i < batch; ++i)
+      stereo[2 * i] = stereo[2 * i + 1] = samples[position + i];
+    if (i2s.write(reinterpret_cast<uint8_t *>(stereo), batch * 4) != batch * 4) {
+      Serial.println("[AUDIO] I2S write incomplete");
+      return false;
+    }
+    position += batch;
+  }
+  return true;
+}
+
 bool AudioManager::playCue(const Request &request) {
-  static const Segment start[] = {{880, 80}, {0, 25}, {1320, 120}};
-  static const Segment complete[] = {
-      {784,180},{0,60},{1046,280},{0,180},
-      {784,180},{0,60},{1046,280},{0,180},
-      {784,180},{0,60},{1046,280},{0,180},{1319,500}};
   static const Segment click[] = {{1500,15}};
   if (request.cue == Cue::Click) return sequence(click, 1, request.id);
-  if (request.cue == Cue::Start) return sequence(start, 3, request.id);
-  if (request.cue == Cue::Completion) return sequence(complete, 13, request.id);
+  if (request.cue == Cue::Start)
+    return playPcm(PianoAudio::kStart, sizeof(PianoAudio::kStart) / sizeof(int16_t), request.id);
+  if (request.cue == Cue::Completion)
+    return playPcm(PianoAudio::kCompletion, sizeof(PianoAudio::kCompletion) / sizeof(int16_t), request.id);
   if (request.cue == Cue::Test) {
-    return sequence(start, 3, request.id) && tone(0, 600, request.id) &&
-           sequence(complete, 13, request.id);
+    return playPcm(PianoAudio::kStart, sizeof(PianoAudio::kStart) / sizeof(int16_t), request.id) &&
+           tone(0, 900, request.id) &&
+           playPcm(PianoAudio::kCompletion, sizeof(PianoAudio::kCompletion) / sizeof(int16_t), request.id);
   }
   return false;
 }
@@ -115,6 +131,7 @@ void AudioManager::taskLoop() {
     const char *name = request.cue == Cue::Completion ? "completion" :
         request.cue == Cue::Start ? "start" : request.cue == Cue::Test ? "speaker-test" : "click";
     Serial.printf("[AUDIO] cue=%s begin\n", name);
+    uint32_t playbackStarted = millis();
     expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, HIGH);
     vTaskDelay(pdMS_TO_TICKS(5));
     bool played = playCue(request);
@@ -127,6 +144,8 @@ void AudioManager::taskLoop() {
     if (finished) selected = Cue::None;
     portEXIT_CRITICAL(&stateMux);
     Serial.printf("[AUDIO] cue=%s %s\n", name, played && drained && finished ? "finished" : "cancelled-or-error");
+    Serial.printf("[AUDIO] playback elapsed=%lu ms (includes drain)\n",
+                  static_cast<unsigned long>(millis() - playbackStarted));
   }
 }
 
@@ -159,7 +178,19 @@ bool AudioManager::init(Arduino_XCA9554SWSPI *exp) {
 
     if (es8311_init(es_handle, &es_clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) == ESP_OK &&
         es8311_sample_frequency_config(es_handle, es_clk.mclk_frequency, es_clk.sample_frequency) == ESP_OK &&
-        es8311_voice_volume_set(es_handle, 100, NULL) == ESP_OK) { // 硬件音量直接调至最大 100
+        // This driver's percentage maps across the entire -95.5..+32dB range.
+        // 75 maps to register 0xBF = 0dB; 100 means +32dB and clips the PCM.
+        es8311_voice_volume_set(es_handle, 75, NULL) == ESP_OK) {
+      Wire.beginTransmission(ES8311_ADDRRES_0);
+      Wire.write(0x32);
+      if (Wire.endTransmission(false) != 0 ||
+          Wire.requestFrom(static_cast<uint8_t>(ES8311_ADDRRES_0), static_cast<uint8_t>(1)) != 1 ||
+          Wire.read() != 0xBF) {
+        Serial.println("[AUDIO] DAC 0dB volume readback failed");
+        return false;
+      }
+      Serial.printf("[AUDIO] DAC volume=0xBF (0dB), I2S configured=%lu Hz/%u bits\n",
+                    static_cast<unsigned long>(i2s.txSampleRate()), static_cast<unsigned>(i2s.txDataWidth()));
       return startWorker();
     }
 

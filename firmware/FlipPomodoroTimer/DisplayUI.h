@@ -19,6 +19,9 @@ public:
   bool init();
   void showBootScreen();
   void setMode(UIMode mode);
+  void setManualScreenOff(bool off);
+  void setPanelOutputOff(bool off, PowerManager &power);
+  bool isManualScreenOff() const { return manualScreenOff; }
   UIMode getMode() const { return currentMode; }
   void fullRedraw(const PomodoroEngine &, const IMUSensor &, const PowerManager &, const RTCManager &);
   void update(const PomodoroEngine &, const IMUSensor &, const PowerManager &, const RTCManager &);
@@ -27,6 +30,7 @@ public:
   Arduino_RGB_Display* getDisplay() const { return display; }
   Arduino_XCA9554SWSPI* getExpander() const { return expander; }
   int checkBadgeClick(int16_t x, int16_t y) const;
+  bool checkScreenOffClick(int16_t x, int16_t y) const;
   bool isAnimating() const { return rotating; }
 
 private:
@@ -34,6 +38,8 @@ private:
   Arduino_RGB_Display *display = nullptr;
   Arduino_Canvas *gfx = nullptr;
   UIMode currentMode = UI_MODE_POMODORO;
+  bool manualScreenOff = false;
+  bool panelOutputOff = false;
   uint8_t currentRotation = 0;
   bool needsRedraw = true;
   TimerState lastState = STATE_IDLE;
@@ -59,6 +65,7 @@ private:
   void drawHeader(const PowerManager &);
   void drawHourglass(int x, int y, int size, uint16_t color);
   void drawClockIcon(int x, int y, int size, uint16_t color);
+  void drawScreenOffIcon(int x, int y, uint16_t color);
   void drawStatus(TimerState state);
   void prepareRing();
   void drawRing(float remaining, bool paused);

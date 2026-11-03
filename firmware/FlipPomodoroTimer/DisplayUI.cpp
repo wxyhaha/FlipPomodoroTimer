@@ -9,6 +9,14 @@ constexpr uint16_t kCyan = 0x07FF, kGold = 0xFE68, kIce = 0xD6BA;
 constexpr int RING_SIZE = 404, RING_X = 38, RING_Y = 58;
 constexpr float PI_F = 3.14159265359f;
 
+// Arduino_RGB_Display leaves displayOn/displayOff empty; issue ST7701 DCS commands.
+class FlipTimerRGBDisplay final : public Arduino_RGB_Display {
+public:
+  using Arduino_RGB_Display::Arduino_RGB_Display;
+  void displayOn() override { if (_bus) _bus->sendCommand(0x29); }
+  void displayOff() override { if (_bus) _bus->sendCommand(0x28); }
+};
+
 // Reserve the complete 2D composition in PSRAM, never clear the live screen.
 class UiCanvas : public Arduino_Canvas {
 public:
@@ -72,7 +80,7 @@ bool DisplayUI::init() {
       BOARD_LCD_B0, BOARD_LCD_B1, BOARD_LCD_B2, BOARD_LCD_B3, BOARD_LCD_B4,
       1, 40, 48, 40, 1, 1, 31, 13, 1, 14000000L, false, 0, 0, 480 * 10);
   panel->enableDoubleBuffer();
-  display = new Arduino_RGB_Display(
+  display = new FlipTimerRGBDisplay(
       BOARD_LCD_WIDTH, BOARD_LCD_HEIGHT, panel, 0, false,
       expander, GFX_NOT_DEFINED, st7701_type1_init_operations, sizeof(st7701_type1_init_operations));
   if (!display->begin()) return false;
@@ -93,7 +101,7 @@ bool DisplayUI::init() {
   gfx->setUTF8Print(true);
   isReady = true;
   setRotation(0);
-  Serial.println("[UI] V6.1: native glyphs, frame-release double buffer, lightweight 240ms 2D rotation");
+  Serial.println("[UI] V6.2: native glyphs, frame-release double buffer, 2D rotation, panel display control");
   return true;
 }
 
@@ -101,9 +109,29 @@ void DisplayUI::setMode(UIMode mode) {
   if (currentMode != mode) { currentMode = mode; needsRedraw = true; }
 }
 
+void DisplayUI::setManualScreenOff(bool off) {
+  if (manualScreenOff != off) {
+    manualScreenOff = off;
+    needsRedraw = true;
+  }
+}
+
+void DisplayUI::setPanelOutputOff(bool off, PowerManager &power) {
+  if (!display || panelOutputOff == off) return;
+  if (off) {
+    display->displayOff();
+    power.dimForFlipDown();
+  } else {
+    display->displayOn();
+    power.restoreFromFlipUp();
+  }
+  panelOutputOff = off;
+  needsRedraw = true;
+}
+
 void DisplayUI::setRotation(uint8_t r) {
   r &= 3;
-  if (!contentReady) {
+  if (!contentReady || manualScreenOff) {
     currentRotation = r; visualAngle = r * 90.0f; needsRedraw = true;
     return;
   }
@@ -128,6 +156,10 @@ int DisplayUI::checkBadgeClick(int16_t x, int16_t y) const {
     if (x >= 408 && x < 464) return UI_MODE_CLOCK;
   }
   return -1;
+}
+
+bool DisplayUI::checkScreenOffClick(int16_t x, int16_t y) const {
+  return y >= 416 && y < 472 && x >= 8 && x < 64;
 }
 
 void DisplayUI::centeredText(const char *text, int baseline, int size, uint16_t color) {
@@ -165,6 +197,13 @@ void DisplayUI::drawClockIcon(int x, int y, int size, uint16_t color) {
   gfx->drawCircle(x, y, size / 2 - 1, color);
   gfx->fillRoundRect(x - 1, y - size / 3, 3, size / 3 + 2, 1, color);
   gfx->fillRoundRect(x, y - 1, size / 4 + 1, 3, 1, color);
+}
+
+void DisplayUI::drawScreenOffIcon(int x, int y, uint16_t color) {
+  // A small display outline keeps this control distinct from the physical power key.
+  gfx->drawRoundRect(x - 12, y - 10, 24, 18, 3, color);
+  gfx->drawFastHLine(x - 7, y + 11, 14, color);
+  gfx->drawFastVLine(x, y + 8, 3, color);
 }
 
 void DisplayUI::drawHeader(const PowerManager &power) {
@@ -350,6 +389,12 @@ void DisplayUI::render(const PomodoroEngine &engine, const PowerManager &power, 
       drawDate(rtc); dirty.include(0, 310, 480, 125);
     }
   }
+  if (full) {
+    gfx->fillCircle(36, 444, 22, 0x0125);
+    gfx->drawCircle(36, 444, 22, kCyan);
+    drawScreenOffIcon(36, 444, kIce);
+    dirty.include(8, 416, 56, 56);
+  }
   presenter.present(gfx->getFramebuffer(), currentRotation, dirty);
   contentReady = true;
 }
@@ -362,6 +407,7 @@ void DisplayUI::fullRedraw(const PomodoroEngine &e, const IMUSensor &imu, const 
 void DisplayUI::update(const PomodoroEngine &e, const IMUSensor &, const PowerManager &p, const RTCManager &r) {
   if (!isReady) return;
   presenter.report();
+  if (manualScreenOff) return;
   if (rotating) {
     unsigned long now = millis(), elapsed = now - rotationStart;
     if (elapsed >= 240) {

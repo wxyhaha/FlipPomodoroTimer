@@ -1,0 +1,518 @@
+{
+  "pivot_xyz_mm": [
+    0,
+    29,
+    5.8
+  ],
+  "assumptions": [
+    "Panel and lid removed before extraction.",
+    "Battery represented as 66.7mm long, 20mm thick capsule of width37.3mm; actual wrapping not modeled."
+  ],
+  "poses": [
+    {
+      "backward_mm": 0.0,
+      "angle_x_deg": 0,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.05,
+      "angle_x_deg": 0,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.1,
+      "angle_x_deg": 0,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.15000000000000002,
+      "angle_x_deg": 0,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.2,
+      "angle_x_deg": 0,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.25,
+      "angle_x_deg": 0,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.30000000000000004,
+      "angle_x_deg": 1,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.35000000000000003,
+      "angle_x_deg": 1,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.4,
+      "angle_x_deg": 1,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.45,
+      "angle_x_deg": 1,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.5,
+      "angle_x_deg": 1,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.55,
+      "angle_x_deg": 2,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.6000000000000001,
+      "angle_x_deg": 2,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.65,
+      "angle_x_deg": 2,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.7000000000000001,
+      "angle_x_deg": 2,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.75,
+      "angle_x_deg": 2,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.8,
+      "angle_x_deg": 3,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.8500000000000001,
+      "angle_x_deg": 3,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.9,
+      "angle_x_deg": 3,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 0.9500000000000001,
+      "angle_x_deg": 3,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.0,
+      "angle_x_deg": 3,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.05,
+      "angle_x_deg": 4,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.1,
+      "angle_x_deg": 4,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.1500000000000001,
+      "angle_x_deg": 4,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.2000000000000002,
+      "angle_x_deg": 4,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.25,
+      "angle_x_deg": 5,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.3,
+      "angle_x_deg": 5,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.35,
+      "angle_x_deg": 5,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.4000000000000001,
+      "angle_x_deg": 5,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.4500000000000002,
+      "angle_x_deg": 6,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.5,
+      "angle_x_deg": 6,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.55,
+      "angle_x_deg": 6,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.6,
+      "angle_x_deg": 7,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.6500000000000001,
+      "angle_x_deg": 7,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.7000000000000002,
+      "angle_x_deg": 7,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.75,
+      "angle_x_deg": 7,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.8,
+      "angle_x_deg": 8,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.85,
+      "angle_x_deg": 8,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.9000000000000001,
+      "angle_x_deg": 8,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 1.9500000000000002,
+      "angle_x_deg": 9,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.0,
+      "angle_x_deg": 9,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.0500000000000003,
+      "angle_x_deg": 10,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.1,
+      "angle_x_deg": 11,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.15,
+      "angle_x_deg": 12,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.2,
+      "angle_x_deg": 13,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.25,
+      "angle_x_deg": 14,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.3000000000000003,
+      "angle_x_deg": 15,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.35,
+      "angle_x_deg": 16,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.4000000000000004,
+      "angle_x_deg": 17,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.45,
+      "angle_x_deg": 18,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.5,
+      "angle_x_deg": 19,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.5500000000000003,
+      "angle_x_deg": 20,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.5500000000000003,
+      "angle_x_deg": 21,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6,
+      "angle_x_deg": 22,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6,
+      "angle_x_deg": 23,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 24,
+      "vertical_mm": -0.025
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 25,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 26,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 27,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 28,
+      "vertical_mm": -0.025
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 29,
+      "vertical_mm": -0.025
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 30,
+      "vertical_mm": -0.05
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 31,
+      "vertical_mm": -0.05
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 32,
+      "vertical_mm": -0.07500000000000001
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 33,
+      "vertical_mm": -0.1
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 34,
+      "vertical_mm": -0.1
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 35,
+      "vertical_mm": -0.125
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 36,
+      "vertical_mm": -0.15000000000000002
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 37,
+      "vertical_mm": -0.15000000000000002
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 38,
+      "vertical_mm": -0.15000000000000002
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 39,
+      "vertical_mm": -0.15000000000000002
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 40,
+      "vertical_mm": -0.15000000000000002
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 41,
+      "vertical_mm": -0.125
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 42,
+      "vertical_mm": -0.125
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 43,
+      "vertical_mm": -0.125
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 44,
+      "vertical_mm": -0.1
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 45,
+      "vertical_mm": -0.1
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 46,
+      "vertical_mm": -0.07500000000000001
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 47,
+      "vertical_mm": -0.05
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 48,
+      "vertical_mm": -0.05
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 49,
+      "vertical_mm": -0.025
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 50,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 51,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 52,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.7,
+      "angle_x_deg": 53,
+      "vertical_mm": -0.025
+    },
+    {
+      "backward_mm": 2.7,
+      "angle_x_deg": 54,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.7,
+      "angle_x_deg": 55,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.75,
+      "angle_x_deg": 56,
+      "vertical_mm": -0.025
+    },
+    {
+      "backward_mm": 2.75,
+      "angle_x_deg": 57,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.75,
+      "angle_x_deg": 58,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.8000000000000003,
+      "angle_x_deg": 59,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.8000000000000003,
+      "angle_x_deg": 60,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.8000000000000003,
+      "angle_x_deg": 61,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.8000000000000003,
+      "angle_x_deg": 62,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.75,
+      "angle_x_deg": 63,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.7,
+      "angle_x_deg": 64,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6500000000000004,
+      "angle_x_deg": 65,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.6,
+      "angle_x_deg": 66,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.5500000000000003,
+      "angle_x_deg": 67,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.5,
+      "angle_x_deg": 68,
+      "vertical_mm": 0.0
+    },
+    {
+      "backward_mm": 2.45,
+      "angle_x_deg": 69,
+      "vertical_mm": 0.0
+    }
+  ]
+}

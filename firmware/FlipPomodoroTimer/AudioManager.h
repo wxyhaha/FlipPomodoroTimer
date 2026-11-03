@@ -37,6 +37,7 @@ private:
   void enqueue(Cue cue);
   bool current(uint32_t id);
   bool tone(uint16_t frequency, uint16_t duration, uint32_t id, bool checkCancel = true);
+  bool playPcm(const int16_t *samples, size_t count, uint32_t id);
   bool sequence(const Segment *segments, size_t count, uint32_t id);
   bool playCue(const Request &request);
   static void taskEntry(void *self);

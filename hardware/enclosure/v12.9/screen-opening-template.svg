@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="110mm" height="130mm" viewBox="0 0 110 130">
+  <rect width="110" height="130" fill="white"/>
+  <g font-family="sans-serif" font-size="3" fill="#222">
+    <text x="8" y="7">屏幕开口核对 · 100% 实际尺寸打印</text>
+    <text x="8" y="12">黑线：86.50外框；橙线：72.80开口</text>
+    <text x="8" y="17">蓝色虚线：71.93显示区域（假定居中）</text>
+  </g>
+  <g transform="translate(11.75 23)">
+    <rect width="86.5" height="86.5" fill="none" stroke="#222" stroke-width=".15"/>
+    <rect x="6.85" y="6.85" width="72.8" height="72.8" rx=".8" fill="none" stroke="#ce6800" stroke-width=".15"/>
+    <rect x="7.285" y="7.285" width="71.93" height="71.93" fill="none" stroke="#1674b4" stroke-width=".12" stroke-dasharray="1 .7"/>
+  </g>
+  <path d="M30 119h50 M30 117v4 M80 117v4" fill="none" stroke="#222" stroke-width=".15"/>
+  <text x="55" y="125" text-anchor="middle" font-family="sans-serif" font-size="3">校验线 50.00mm · 不要适应页面</text>
+</svg>

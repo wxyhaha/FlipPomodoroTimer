@@ -29,6 +29,12 @@ public:
       return false;
     }
 
+    // Shutdown is initiated by two short PWRKEY clicks in firmware, not a long hold.
+    pmu.disableLongPressShutdown();
+    pmu.disableIRQ(XPOWERS_AXP2101_PKEY_LONG_IRQ);
+    pmu.enableIRQ(XPOWERS_AXP2101_PKEY_SHORT_IRQ);
+    pmu.clearIrqStatus();
+
     // 启用内部 ADC 测量通道
     pmu.enableBattDetection();
     pmu.enableVbusVoltageMeasure();
@@ -69,6 +75,49 @@ public:
 
   bool sampled = false;
   unsigned long lastSampleMs = 0;
+
+  bool updatePowerKeyDoubleClick(unsigned long now = millis()) {
+    if (!isReady) return false;
+
+    // Poll the AXP2101's latched short-press IRQ often enough to separate two clicks.
+    if (powerKeyPolled && now - lastPowerKeyPollMs < POWER_KEY_POLL_INTERVAL_MS) {
+      if (waitingForSecondPowerKeyClick && now - firstPowerKeyClickMs > POWER_KEY_DOUBLE_CLICK_MS) {
+        waitingForSecondPowerKeyClick = false;
+      }
+      return false;
+    }
+    powerKeyPolled = true;
+    lastPowerKeyPollMs = now;
+
+    uint64_t irqStatus = pmu.getIrqStatus();
+    bool shortPress = pmu.isPekeyShortPressIrq();
+    if (irqStatus) pmu.clearIrqStatus();
+
+    if (waitingForSecondPowerKeyClick && now - firstPowerKeyClickMs > POWER_KEY_DOUBLE_CLICK_MS) {
+      waitingForSecondPowerKeyClick = false;
+    }
+    if (!shortPress) return false;
+
+    if (waitingForSecondPowerKeyClick) {
+      waitingForSecondPowerKeyClick = false;
+      return true;
+    }
+
+    waitingForSecondPowerKeyClick = true;
+    firstPowerKeyClickMs = now;
+    return false;
+  }
+
+  void shutdown() {
+    if (isReady) pmu.shutdown();
+  }
+
+  static constexpr unsigned long POWER_KEY_DOUBLE_CLICK_MS = 600;
+  static constexpr unsigned long POWER_KEY_POLL_INTERVAL_MS = 20;
+  bool powerKeyPolled = false;
+  bool waitingForSecondPowerKeyClick = false;
+  unsigned long lastPowerKeyPollMs = 0;
+  unsigned long firstPowerKeyClickMs = 0;
 
   void setBacklight(uint8_t brightness) {
     targetBrightness = brightness;

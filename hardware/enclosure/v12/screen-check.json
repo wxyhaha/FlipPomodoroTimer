@@ -1,0 +1,592 @@
+{
+  "version": "V12.9",
+  "official_dimension_image": "https://docs.waveshare.net/assets/images/ESP32-S3-Touch-LCD-4B-details-size-10826e511c001d8541b2a98abc4337d6.webp",
+  "active_area_mm": [
+    71.93,
+    71.93
+  ],
+  "panel_size_mm": [
+    86.5,
+    86.5
+  ],
+  "assumptions": [
+    "Active square centered in panel; official image does not dimension its offset.",
+    "Active plane at panel front; actual glass optical stack not modeled.",
+    "Horizontal offset +/-0.05 mm is a checked scenario, not guaranteed right-side retention; vertical offset follows panel vertical clearance."
+  ],
+  "minimum_aperture_width_mm": 72.8,
+  "straight_edge_nominal_margin_mm": 0.43499999999999517,
+  "shell_stl_sha256": "5e2ccbd08b43df750557b1fe9385735486543a47700d8d5a175e86e0cd4f2c18",
+  "checks": [
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": 0,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0.004827829128654807
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 2.193805548926064e-06
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 3.776826377734753
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": 0,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": 0,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0.004827882237461345
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 2.194159021072853e-06
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": -0.05,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 3.776808153908129
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": 0,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0.0008487412209399614
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0.0008487544229373576
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 3.7756027267846437
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": 0,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": 0,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0.0008487461775527647
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0.0008487576694900851
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 3.7755845128018444
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": 0,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 2.194318983610413e-06
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": -0.2,
+      "axis": "x",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0.004827880307640008
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 3.776826427513006
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": -0.2,
+      "axis": "z",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": 0,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0,
+      "axis": "x",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0,
+      "axis": "z",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": 0,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 2.194627439075183e-06
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0.2,
+      "axis": "x",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 0.0048279312875191
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": -15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": 15,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": -30,
+      "blocked_volume_mm3": 0
+    },
+    {
+      "offset_x_mm": 0.05,
+      "offset_z_mm": 0.2,
+      "axis": "z",
+      "angle_deg": 30,
+      "blocked_volume_mm3": 3.7768081992593197
+    }
+  ],
+  "passed": false,
+  "normal_view_passed": true,
+  "oblique_blocked_cases": 14
+}
