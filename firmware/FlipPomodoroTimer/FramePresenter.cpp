@@ -93,14 +93,6 @@ bool FramePresenter::present(const uint16_t *canvas, uint8_t rotation, UiRect di
 bool FramePresenter::prepareAnimation(const uint16_t *canvas) {
   if (animationTexture) return true;
   bool internal = false;
-  // A native-resolution snapshot preserves glyph detail while rotating.
-  textureSize = 480;
-  animationTexture = static_cast<uint16_t *>(heap_caps_malloc(480 * 480 * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (animationTexture) {
-    memcpy(animationTexture, canvas, 480 * 480 * sizeof(uint16_t));
-    Serial.println("[UI] animation cache=480x480 PSRAM");
-    return true;
-  }
   const int sizes[] = {240, 160, 120};
   for (int size : sizes) {
     size_t bytes = size * size * sizeof(uint16_t);
@@ -113,15 +105,11 @@ bool FramePresenter::prepareAnimation(const uint16_t *canvas) {
     animationTexture = static_cast<uint16_t *>(heap_caps_malloc(240 * 240 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   }
   if (!animationTexture) return false;
-  int scale = 480 / textureSize, samples = scale * scale;
+  int scale = 480 / textureSize;
+  // Point sampling avoids the extra blur of averaging while preserving the
+  // fast internal-RAM rotation path. The final frame remains full resolution.
   for (int y = 0; y < textureSize; ++y) for (int x = 0; x < textureSize; ++x) {
-    int red = 0, green = 0, blue = 0;
-    for (int dy = 0; dy < scale; ++dy) for (int dx = 0; dx < scale; ++dx) {
-      uint16_t c = canvas[(y * scale + dy) * 480 + x * scale + dx];
-      red += (c >> 11) & 31; green += (c >> 5) & 63; blue += c & 31;
-    }
-    animationTexture[y * textureSize + x] = ((red / samples) << 11) |
-        ((green / samples) << 5) | (blue / samples);
+    animationTexture[y * textureSize + x] = canvas[(y * scale + scale / 2) * 480 + x * scale + scale / 2];
   }
   Serial.printf("[UI] animation cache=%ux%u %s\n", textureSize, textureSize, internal ? "DRAM" : "PSRAM");
   return true;

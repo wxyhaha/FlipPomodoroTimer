@@ -117,6 +117,7 @@ public:
       resume();
     } else if (state == STATE_COMPLETED) {
       confirmCompleted();
+      startFocus();
     }
   }
 

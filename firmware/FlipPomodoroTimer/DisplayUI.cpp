@@ -376,10 +376,14 @@ void DisplayUI::render(const PomodoroEngine &engine, const PowerManager &power, 
     if (rtc.timeValid) drawCenteredDigits(rtc.getTimeString(), 240, 342, 24, 40, kIce, smallText, full);
     else if (full) { centeredText("--:--", 380, 2, kMuted); dirty.include(180,342,120,40); }
   } else {
+    snprintf(time, sizeof(time), "%02u:%02u", rtc.getHour(), rtc.getMinute());
+    int width = digitTextWidth(time, 70), secondsWidth = digitTextWidth("00", 23);
+    int left = (480 - width - 12 - secondsWidth) / 2;
     if (rtc.timeValid) {
-      snprintf(time, sizeof(time), "%02u:%02u:%02u", rtc.getHour(), rtc.getMinute(), rtc.getSecond());
-      drawCenteredDigits(time, 240, 165, 64, 104, kWhite, mainText, full);
-    } else if (full) { centeredText("--:--:--", 260, 3, kMuted); dirty.include(40,180,400,100); }
+      drawDigits(time, left, 165, 70, 116, kWhite, mainText, full);
+      snprintf(time, sizeof(time), "%02u", rtc.getSecond());
+      drawDigits(time, left + width + 12, 165, 23, 39, kIce, secondsText, full);
+    } else if (full) { centeredText("--:--", 260, 4, kMuted); dirty.include(100,180,280,100); }
     uint32_t date = rtc.currentDateTime.getYear() * 10000UL +
         rtc.currentDateTime.getMonth() * 100UL + rtc.currentDateTime.getDay();
     if (full || lastDate != date) {
