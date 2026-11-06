@@ -48,6 +48,7 @@ private:
   uint32_t lastClockSecond = ~0UL;
   int lastBattery = -999;
   bool lastVbus = false;
+  bool lastTimeValid = false;
   bool lastBatteryConnected = false;
   uint16_t *ringPixels = nullptr;
   FramePresenter presenter;

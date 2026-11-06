@@ -41,10 +41,12 @@ void setup() {
 
   // Backlight pin
   pinMode(BOARD_LCD_BACKLIGHT, OUTPUT);
-  digitalWrite(BOARD_LCD_BACKLIGHT, HIGH);
+  digitalWrite(BOARD_LCD_BACKLIGHT, LOW);
 
   // Wire I2C
   Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
+
+  expander->begin();
 
   // Reset Touch and LCD via Expander
   expander->pinMode(BOARD_EXPANDER_TOUCH_RST, OUTPUT);
@@ -124,9 +126,9 @@ void loop() {
     // When screen faces up: az is usually near +1.0g (or -1.0g depending on mount)
     // When flipped face down: az sign is inverted
     const char *orientation_str = "NORMAL";
-    if (az < -0.65) {
+    if (az > 0.65) {
       orientation_str = "FACE DOWN (FLIPPED)";
-    } else if (az > 0.65) {
+    } else if (az < -0.65) {
       orientation_str = "FACE UP";
     } else if (ay > 0.65) {
       orientation_str = "STAND UPRIGHT";

@@ -1,8 +1,10 @@
 #include "AudioManager.h"
 #include "PianoAudio.h"
+#include "ExpanderLock.h"
 #include <math.h>
 
 bool AudioManager::startWorker() {
+  (void)expanderMutex(); // Initialize before either task can use the shared bus.
   if (!expander) return false;
   for (int i = 0; i < 256; ++i) sine[i] = lroundf(sinf(i * 6.28318530718f / 256) * 26000);
   requests = xQueueCreate(1, sizeof(Request));
@@ -132,12 +134,12 @@ void AudioManager::taskLoop() {
         request.cue == Cue::Start ? "start" : request.cue == Cue::Test ? "speaker-test" : "click";
     Serial.printf("[AUDIO] cue=%s begin\n", name);
     uint32_t playbackStarted = millis();
-    expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, HIGH);
+    { ExpanderLock lock; expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, HIGH); }
     vTaskDelay(pdMS_TO_TICKS(5));
     bool played = playCue(request);
     // I2S write queues DMA data; don't mute the amp while the final note is pending.
     bool drained = played && tone(0, 160, request.id);
-    expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, LOW);
+    { ExpanderLock lock; expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, LOW); }
     if (!drained) tone(0, 160, request.id, false); // Clear queued tail while muted.
     portENTER_CRITICAL(&stateMux);
     bool finished = generation == request.id;

@@ -132,18 +132,10 @@ public:
   void confirmCompleted() {
     isAlerting = false;
     if (state == STATE_COMPLETED) {
-      // 专注完成后切换至准备休息
-      if (currentTotalDurationSec == focusDurationSec) {
-        completedPomodoros++;
-        state = STATE_IDLE;
-        currentTotalDurationSec = breakDurationSec;
-        elapsedMs = 0;
-      } else {
-        // 休息完成后切回准备专注
-        state = STATE_IDLE;
-        currentTotalDurationSec = focusDurationSec;
-        elapsedMs = 0;
-      }
+      completedPomodoros++;
+      state = STATE_IDLE;
+      currentTotalDurationSec = focusDurationSec;
+      elapsedMs = 0;
       stateChanged = true;
     }
   }

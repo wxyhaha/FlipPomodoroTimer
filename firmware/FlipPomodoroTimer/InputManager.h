@@ -27,6 +27,8 @@ public:
     currentRotation = r & 3;
   }
 
+  void cancelTouch() { isTouched = false; suppressTouchUntilRelease = true; }
+
   bool init(TwoWire &wire = Wire) {
     pinMode(BOARD_BOOT_PIN, INPUT_PULLUP);
 
@@ -34,7 +36,7 @@ public:
       touch.setMaxTouchPoint(1);
       touchReady = true;
     }
-    return true;
+    return touchReady;
   }
 
   UserAction update() {

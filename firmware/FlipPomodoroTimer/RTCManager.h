@@ -10,6 +10,7 @@ class RTCManager {
 public:
   bool isReady = false;
   bool ntpSynced = false;
+  bool timeValid = false;
   RTC_DateTime currentDateTime;
   char timeStr[16] = "--:--";
 
@@ -23,6 +24,8 @@ public:
       rtc.start();
     }
     isReady = true;
+    timeValid = rtc.isClockIntegrityGuaranteed();
+    if (!timeValid) { Serial.println("[RTC] Time invalid; awaiting synchronization"); return true; }
     currentDateTime = rtc.getDateTime();
     snprintf(timeStr, sizeof(timeStr), "%02u:%02u", currentDateTime.getHour(), currentDateTime.getMinute());
     Serial.printf("[RTC] PCF85063 Ready. Current Time: %04u-%02u-%02u %02u:%02u:%02u\n",
@@ -69,6 +72,7 @@ public:
                       timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
         if (isReady) {
           rtc.setDateTime(RTC_DateTime(timeinfo));
+          timeValid = rtc.isClockIntegrityGuaranteed();
           currentDateTime = rtc.getDateTime();
           snprintf(timeStr, sizeof(timeStr), "%02u:%02u", currentDateTime.getHour(), currentDateTime.getMinute());
         }
@@ -94,6 +98,8 @@ public:
     if (!isReady) return;
     if (now - lastUpdate >= 1000) {
       lastUpdate = now;
+      timeValid = timeValid && rtc.isClockIntegrityGuaranteed();
+      if (!timeValid) { strcpy(timeStr, "--:--"); return; }
       currentDateTime = rtc.getDateTime();
       snprintf(timeStr, sizeof(timeStr), "%02u:%02u", currentDateTime.getHour(), currentDateTime.getMinute());
     }

@@ -93,6 +93,14 @@ bool FramePresenter::present(const uint16_t *canvas, uint8_t rotation, UiRect di
 bool FramePresenter::prepareAnimation(const uint16_t *canvas) {
   if (animationTexture) return true;
   bool internal = false;
+  // A native-resolution snapshot preserves glyph detail while rotating.
+  textureSize = 480;
+  animationTexture = static_cast<uint16_t *>(heap_caps_malloc(480 * 480 * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (animationTexture) {
+    memcpy(animationTexture, canvas, 480 * 480 * sizeof(uint16_t));
+    Serial.println("[UI] animation cache=480x480 PSRAM");
+    return true;
+  }
   const int sizes[] = {240, 160, 120};
   for (int size : sizes) {
     size_t bytes = size * size * sizeof(uint16_t);

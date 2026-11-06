@@ -47,6 +47,7 @@ void updateUsbMode(unsigned long now) {
     ui.setMode(UI_MODE_CLOCK);
     Serial.println("[POWER] Stable USB input -> Clock page");
   } else {
+    if (engine.pauseReason == PAUSE_BY_USB) engine.pauseReason = PAUSE_BY_USER;
     ui.setMode(UI_MODE_POMODORO);
     Serial.println("[POWER] USB input removed -> Pomodoro page (timer stays paused)");
   }
@@ -127,6 +128,7 @@ void setup() {
   ui.setRotation(initialRotation);
   input.setRotation(initialRotation);
 
+  if (imu.isFlippedDown()) ui.setPanelOutputOff(true, power);
   delay(400);
 
   // 首次完整绘制拟真科技感全界面
@@ -162,6 +164,7 @@ void loop() {
     audio.stop();
     power.shutdown();
   }
+  bool previousStableVbus = stableVbusIn;
   updateUsbMode(now);
 
   // 3. 推进硬件 RTC 时间走时
@@ -209,15 +212,12 @@ void loop() {
       uint8_t face = imu.getFaceIndex();
       unsigned long faceSec = imu.getFaceDurationSec();
 
-      // 如果立到了新的面，或者之前在待机/完成状态，切换到对应面独立倒计时
-      if (stableVbusIn && (ui.getMode() == UI_MODE_CLOCK || engine.pauseReason == PAUSE_BY_USB)) {
-        // USB 时钟模式下不启动隐藏倒计时；自动暂停期间移动也不覆盖剩余时间。
+      // 番茄钟页立到新面或待机/完成后重新立起时，切换到该面的独立倒计时。
+      if (ui.getMode() == UI_MODE_CLOCK || engine.pauseReason == PAUSE_BY_USB) {
+        // 时钟页下翻面只更新屏幕方向，不启动隐藏倒计时或切换页面；
+        // USB 自动暂停期间移动也不覆盖保留的剩余时间。
       } else if (engine.activeFace != face || engine.state == STATE_IDLE || engine.state == STATE_COMPLETED) {
         Serial.printf("[POMO] Tilt to New Face %u (%lu sec) -> Start Timer!\n", face, faceSec);
-        // 如果当前在时钟模式，翻面自动切回番茄倒计时模式
-        if (ui.getMode() != UI_MODE_POMODORO) {
-          ui.setMode(UI_MODE_POMODORO);
-        }
         engine.startFace(face, faceSec);
 
       } else if ((engine.state == STATE_FOCUS_PAUSED || engine.state == STATE_BREAK_PAUSED) &&
@@ -230,6 +230,7 @@ void loop() {
   }
 
   // 7. 轮询触摸与物理按键输入
+  if (ui.isAnimating()) input.cancelTouch();
   UserAction action = input.update();
   if (action == ACTION_TAP && ui.isAnimating() && !input.lastTapFromButton) {
     action = ACTION_NONE; // Ignore moving touch targets until rotation settles.
@@ -275,6 +276,20 @@ void loop() {
   if (engine.state == STATE_COMPLETED && stateAtLoopStart != STATE_COMPLETED) {
     Serial.println("[ALERT] Countdown finished; queue 2.1 second soft piano cue");
     audio.playCompletionChime();
+  }
+
+  // Once completed, blank the display after 30 seconds without interaction.
+  // Waking or changing page/pose starts a new inactivity interval.
+  static unsigned long completedActivityMs = 0;
+  if (engine.state == STATE_COMPLETED) {
+    if (stateAtLoopStart != STATE_COMPLETED || action != ACTION_NONE || oriChanged ||
+        previousStableVbus != stableVbusIn) {
+      completedActivityMs = millis();
+    } else if (!ui.isManualScreenOff() && millis() - completedActivityMs >= 30000UL) {
+      ui.setManualScreenOff(true);
+      ui.setPanelOutputOff(true, power);
+      Serial.println("[UI] Completion inactivity -> panel off");
+    }
   }
 
   // 持续刷新二维界面，翻面方向由姿态事件切换。
