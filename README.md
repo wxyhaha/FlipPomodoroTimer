@@ -1,127 +1,108 @@
-# FlipPomodoroTimer
+# 翻转番茄钟 Flip Pomodoro Timer
 
-基于微雪 ESP32-S3-Touch-LCD-4B 的翻转番茄钟。四个侧面对应 5 / 10 / 30 / 60 分钟，向后翻平暂停，立回原面继续，换到其他面直接重新计时。支持触摸切换番茄钟与桌面时钟页，并根据 USB 供电状态自动切页。
+一个可以翻面选择时长的桌面番茄钟：以微雪 ESP32-S3 触摸屏开发板为核心，配合可充电锂电池、定制 3D 打印外壳和自绘界面，让翻转、计时和看时间都成为直观的桌面动作。
 
-> 检查后的固件修复及完成后点击重启等调整已实现并烧录，尚待实机验收，详情见[代码检查与修复记录](docs/CODE-REVIEW-2026-11-06.md)。
+## 成品展示
 
-## 当前版本：V6.2 息屏与电源按键调整
+<p align="center">
+  <img src="docs/media/front.jpg" alt="翻转番茄钟正面实物" width="480">
+</p>
 
-V6.2 在 V6.1 稳定刷新与轻量二维旋转基础上，令手动息屏完整关闭面板显示并关闭背光；实体 PWRKEY 改为双击关机。V6.2 编译、烧录及实机验收情况见 [V6 验收记录](docs/UI-V6-VALIDATION.md)。
+| 接口与按键侧面 | 扬声器侧面 |
+| :---: | :---: |
+| ![接口与按键侧面](docs/media/ports-side.jpg) | ![扬声器侧面](docs/media/speaker-side.jpg) |
 
-- 番茄钟：20 段圆环，每组 5 段红、黄橙、绿、青蓝主色；组内轻微渐变，圆弧边缘抗锯齿，角部轻微圆润；外径从 360px 放大为 400px，圆心上移。
-- 中央使用本项目自绘七段数码字，显示 MM:SS；下方以较小数字显示当前 HH:MM。
-- 时钟页无圆环，显示大号 HH:MM、小号秒数、中文年月日和“星期日”至“星期六”。
-- 两页左上是沙漏模式图标，右上是时钟模式图标；当前模式青色高亮，非当前模式灰色。
-- 顶部中间显示电池图标与估算电量百分比，充电时显示闪电、低电量显示琥珀色，无法读取时显示 `--%`；左下角显示器图标关闭面板输出及背光，轻触屏幕任意位置唤醒；实体 PWRKEY 在 600ms 内双击完整关机。
-- 移除面号、完成轮数和底部说明；内部仍保留原有计时统计，不显示到界面。
-- 移除 3D 透视与明暗变形。静止时只重画变化的数字区域，使用两个驱动帧缓冲及 SDK 帧释放回调交接；不再每秒重传整张画面到前缓冲。
-- 翻面加入目标 240ms 的平面旋转过渡，快速连续翻面时转向最新方向；动画末帧使用整数坐标。动画优先使用 240×240 内部 RAM 纹理并采用点采样，内存不足时回退更小纹理或 PSRAM；落位恢复原生画面；实际时长与帧数由诊断记录，未承诺固定帧率。
-- 屏幕方向使用 100ms 候选稳定时间及 1.25 倍轴向优势判断，计时面识别仍保持 600ms 防抖。实际响应还受主循环、绘制和提示音耗时影响。
-- 开始/恢复/换面计时播放 1.03 秒柔和电钢琴双音；完成时播放一次 2.10 秒上扬旋律。音频在后台播放，确认完成或开始新计时可取消旧提醒，详情见[提示音文档](docs/AUDIO.md)。
-- 修正 LCD/功放共用 TCA9554 的构造参数和 I2C 地址；用户已确认画面与测试提示音正常，拔掉 USB 再插回也能显示。完整计时到期与提示音抢占场景仍待覆盖。
+| 电池与内部固定 | 后盖 |
+| :---: | :---: |
+| ![电池与内部固定](docs/media/battery-compartment.jpg) | ![带散热槽的后盖](docs/media/rear.jpg) |
 
-## 操作
+### 翻面与时钟演示
+
+<p align="center">
+  <img src="docs/media/demo-preview.gif" alt="翻转番茄钟实物演示动图" width="240">
+</p>
+
+[播放完整实物视频（MP4）](docs/media/demo.mp4)。视频展示翻面切换计时面、屏幕方向旋转及番茄钟与时钟页面切换；拍摄时的界面细节可能与当前固件略有不同。
+
+## 功能与亮点
+
+- **翻面选时**：四个侧面分别对应 5、10、30、60 分钟；切换到不同面时按对应时长重新计时。QMI8658 识别姿态，屏幕随方向旋转。
+- **直观显示**：自绘数码字、20 段彩色剩余时间环与暂停标识；时钟页显示时间、秒数、日期和中文星期。
+- **触摸与实体按键**：触摸切换页面或控制计时；BOOT 短按控制计时、长按重置。触摸热区随显示方向映射。
+- **暂停与息屏**：向后翻平暂停，立回原面可恢复；屏幕朝下暂停并关闭面板和背光。也可手动息屏，轻触唤醒；倒计时完成后 30 秒无操作自动息屏。
+- **柔和提示音**：开始、恢复和完成时播放电钢琴提示音，音频由后台任务处理。
+- **电池与供电**：电池图标旁显示电量估算百分比，充电时显示闪电，低电量显示琥珀色；设备支持电池供电和 USB 供电。
+- **桌面时钟**：开机可通过 Wi-Fi / NTP 同步板载 RTC；没有本地 Wi-Fi 配置时离线使用 RTC，时钟无效时显示占位符。
+- **定制外壳**：树脂打印主壳、后盖和电池压条，预留侧面接口、按键及扬声器位置。
+
+## 操作说明
 
 | 操作 | 行为 |
 | --- | --- |
-| 点左上沙漏 | 切换到番茄钟页，不重置计时 |
-| 点右上时钟 | 手动切到时钟页，当前计时状态不变 |
-| 点左下角显示器图标 | 完整关闭面板显示及背光；计时继续，轻触屏幕任意位置唤醒 |
-| 点番茄钟页非模式按钮区域 | 开始、暂停或继续；完成后点击立即重新开始当前面的计时 |
-| 点时钟页空白区域 | 无动作，避免误操作后台计时 |
-| 单击 BOOT | 开始、暂停或继续计时 |
+| 番茄钟页翻到不同侧面 | 从该面的 5 / 10 / 30 / 60 分钟预设重新计时 |
+| 向后翻平，屏幕朝上 | 暂停并保持屏幕点亮；立回原面恢复 |
+| 屏幕朝下扣放 | 暂停并关闭面板和背光；翻回可见姿态恢复显示 |
+| 点击番茄钟页空白处或短按 BOOT | 开始、暂停、继续；完成后重新开始当前面计时 |
+| 点击顶部沙漏 / 时钟图标 | 切换页面，不重置当前计时；时钟页翻面仅旋转显示 |
+| 点击左下显示器图标 | 息屏，计时继续；触摸先唤醒，不同时触发计时操作 |
 | 长按 BOOT 至少 1.5 秒 | 重置计时 |
-| 翻到不同计时面 | 在番茄钟页从该面的预设时长重新开始；时钟页保持时钟 |
-| 向后翻平，屏幕朝上 | 暂停并保持屏幕点亮 |
-| 从翻转暂停立回原面 | 恢复剩余时间 |
-| 屏幕朝下扣放 | 暂停并关闭面板显示及背光 |
-| USB 接入 / 拔除 | 稳定 1 秒后，非计时运行状态下接入切换时钟页；正在计时时接入保持当前页面并继续计时。拔除切回番茄钟页；待机时按稳定侧面自动开始，运行中或暂停的计时保持原状态 |
-| 倒计时完成后 30 秒无操作 | 自动关闭面板和背光；触摸唤醒，唤醒后仍处于完成状态时重新计时 30 秒 |
-| 600ms 内双击实体 PWRKEY | 完整关机；屏幕息屏不切断系统电源。关机后按实体 PWRKEY 开机 |
+| 600ms 内双击 PWRKEY | 关机；关机后按 PWRKEY 开机 |
+| USB 接入 / 拔除 | 状态稳定 1 秒后生效。计时运行中接入不切页、不暂停；非运行状态接入切到时钟页。拔除切到番茄钟页：待机时按稳定侧面启动，已有运行、暂停或完成状态保留 |
 
-触摸热区为 56×56px：沙漏 x=16..71、时钟 x=408..463，均为 y=8..63；息屏 x=8..63、y=416..471。坐标随显示方向映射，旋转中已开始的触摸会取消，避免释放时误触。
+## 成本统计
 
-圆环表示剩余时间：开始时 20 段全亮，每段对应总时长的 5%，耗尽部分降为暗色；暂停时整体略暗，并显示金色暂停标识。未接电池显示空电池及短横线，不将未知电量画成满电。
+按本次提供的采购及加工费用统计，单位为人民币：
 
-## 硬件与技术栈
+| 项目 | 规格 | 金额 |
+| --- | --- | ---: |
+| 微雪触摸屏开发板 | ESP32-S3-Touch-LCD-4B，4 英寸、480×480 | ¥202.00 |
+| 德力普锂电池组 | 18650，标称 3.7V、5200mAh | ¥24.59 |
+| 定制外壳 | 嘉立创 X 树脂打印 | ¥47.89 |
+| 十字薄头自攻螺丝 | M3×10 | ¥2.12 |
+| **合计** | **上述四项费用** | **¥276.60** |
 
-- 主板：ESP32-S3-Touch-LCD-4B，16MB Flash、8MB OPI PSRAM、4 英寸 480×480 LCD。
-- 外设：QMI8658、GT911、PCF85063、AXP2101、ES8311，具体接口见[硬件文档](docs/HARDWARE.md)。
-- 工具：Arduino CLI、ESP32 Arduino 核心、仓库内 Arduino_GFX / SensorLib / XPowersLib。
-- 开机尝试 Wi-Fi NTP 授时至板载 RTC，然后关闭 Wi-Fi；离线使用 RTC，RTC 初始化失败时显示占位符。
-- Wi-Fi 凭证来自 Git 忽略的本地配置，公开源码不包含私人网络信息；未配置时跳过联网校时，继续使用硬件 RTC。
-- 已确认拔掉 USB 后设备仍由电池运行；一次 35 秒观察中系统运行且电源芯片持续报告充电。实际充电电流、完整充电过程、电池容量、长时间续航与 USB 自动模式仍待实机验收，外壳也仍待试装。
+以上为本次记录的四项支出，不代表包含运费、工具、线材等其他可能费用，也不代表通用市场报价。电池容量为标称值，尚未完成容量和续航实测。
 
-## 文档入口
+## 硬件与结构
 
-- [项目开发注意事项](AGENTS.md)：提交前必须检查文档并同步更新。
-- [硬件与条件](docs/HARDWARE.md)
-- [外壳结构草案 V7](hardware/enclosure/README.md)：实测电池底部平放，简化为倒 U 型电池罩、底部挡边及后侧两颗水平螺丝，可从后仓套入和拆出；打印配合尚待试样验证。
-- [开发计划](docs/PLAN.md)
-- [UI 设计历史与当前规格](docs/design/UI-DESIGN.md)
-- [V6 实现与验收记录](docs/UI-V6-VALIDATION.md)
-- [V5 历史实现记录](docs/UI-V5-VALIDATION.md)
-- [本地依赖补丁](firmware/libraries/LOCAL_PATCHES.md)
-- [开始与完成提示音](docs/AUDIO.md)：短开始音、长完成音与喇叭测试方法。
-- [官方资料摘录](docs/ESP32-S3-Touch-LCD-4B官方资料.md)
-- [微雪官方 Wiki](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4B)
+| 部件 | 主要配置 |
+| --- | --- |
+| 主控与屏幕 | 微雪 ESP32-S3-Touch-LCD-4B，ESP32-S3、16MB Flash、8MB PSRAM，4 英寸 480×480 触摸屏 |
+| 传感与触摸 | QMI8658 六轴传感器、GT911 触摸控制器 |
+| 时间与电源 | PCF85063 RTC、AXP2101 电源管理 |
+| 声音 | ES8311 音频编解码器与板载扬声器 |
+| 电池 | 德力普 3.7V 5200mAh 18650 电池组；电量显示为芯片估算 |
+| 外壳 | V12.9：主壳、后盖、电池压条；设计总包络约 90.5×94.5×92.5mm，为模型名义尺寸 |
 
-## 快速上手与编译烧录指南
+详细接线、电池与充电说明见[硬件说明](docs/HARDWARE.md)；外壳 STL、结构及装配注意事项见[外壳说明](hardware/enclosure/README.md)。
 
-项目完全支持通过 `arduino-cli` 命令行一键编译与上传，无需配置繁重的 IDE。
+## 构建与烧录
 
-### 1. 编译环境要求
-
-- **操作系统**：Windows / macOS / Linux
-- **工具链**：`arduino-cli v1.5.1`（原环境记录）
-- **ESP32 Arduino 核心**：`esp32:esp32@3.3.11`
-- **目标板 FQBN 参数**：
-  ```bash
-  esp32:esp32:esp32s3:CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi,LoopCore=1,EventsCore=1,EraseFlash=none
-  ```
-
-### 2. 编译固件
-
-在项目根目录下执行编译命令（本地依赖已集成在 `firmware/libraries/` 中）：
+使用 Arduino CLI 1.5.1 和 `esp32:esp32@3.3.11`；仓库中的 `firmware/libraries/` 包含本项目需要的本地库及显示驱动补丁。构建时在项目根目录执行：
 
 ```bash
 arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi,LoopCore=1,EventsCore=1,EraseFlash=none --libraries "firmware/libraries" "firmware/FlipPomodoroTimer"
 ```
 
-本次修正版固件编译输出（已烧录，交互效果待实机验收）：
-```text
-Sketch uses 1602163 bytes (50%) of program storage space. Maximum is 3145728 bytes.
-Global variables use 49164 bytes (15%) of dynamic memory, leaving 278516 bytes for local variables. Maximum is 327680 bytes.
-```
-
-### 3. 烧录固件到开发板
-
-将开发板的 `USB TO UART` Type-C 接口连接至电脑，确认串口号（如 Windows 下为 `COM3`）：
+连接开发板 `USB TO UART` 口，将下方 `COM3` 替换为实际串口：
 
 ```bash
 arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32s3:CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi,LoopCore=1,EventsCore=1,EraseFlash=none "firmware/FlipPomodoroTimer"
 ```
 
-### 4. 查看运行遥测日志
+需要联网校时时，将 `firmware/FlipPomodoroTimer/WiFiConfig.example.h` 复制为同目录 `WiFiConfig.local.h` 并填写配置；该文件已被 Git 忽略。**公开分享固件前应在没有私人配置的环境构建**。未配置 Wi-Fi 时可离线运行，RTC 需要已有有效时间。调试串口波特率为 115200。
 
-波特率为 `115200`，可以使用串口调试工具或 Python 脚本查看开机自检、NTP 同步与 1Hz 实时状态输出：
+## 验证与说明
 
-```bash
-python -c "import serial, time; ser = serial.Serial('COM3', 115200, timeout=1); [print(ser.readline().decode('utf-8', errors='replace').strip()) for _ in iter(int, 1)]"
-```
+实物照片展示了外壳、面板、电池安装及后盖；视频展示了翻面与页面切换。设备曾完成编译、烧录和写入校验；电池已通过短时独立供电检查，另一次 35 秒观察中系统运行且电源芯片持续报告充电。
 
-## 可选的 Wi-Fi 校时配置
+图片和短时观察不能证明所有工况均已通过：完整充电周期、实际容量与续航、长期装配可靠性，以及最新 USB 插拔、电量图标和动画观感仍需进一步验证。外壳尺寸为模型名义值，右侧面板防脱、线束和螺丝配合请结合实物检查。更多信息见[验收说明](docs/UI-V6-VALIDATION.md)。
 
-将 `firmware/FlipPomodoroTimer/WiFiConfig.example.h` 复制为同目录的 `WiFiConfig.local.h`，填入自己的 SSID 和密码后编译。这个文件已被 Git 忽略，不应提交或分享。未创建本地配置时仍可构建并离线运行；硬件 RTC 本身需要具有正确时间。
+## 项目资料
 
-公开发布固件二进制时，应在没有私人本地配置的环境中构建，避免将本机凭证包含在固件中。
-
-## 数码字资源复现
-
-`firmware/FlipPomodoroTimer/DigitFont.h` 为本项目原创几何字形在四个最终像素尺寸生成的数字蒙版（64×104、70×116、24×40、23×39），静止显示时直接按原生像素绘制，不使用低分辨率蒙版放大。生成文件已入库，正常构建不需要 Python。
-
-修改字形时运行 `python tools/generate_digit_font.py`，只需要 Python 3.10+ 标准库。图形设计稿不作为固件运行时图片使用。
-
-## 公开复现前仍需补齐
-
-确认完整的工具链安装与固定版本流程、第三方库及字库许可证、项目许可证、电池测试、外壳和干净环境复现。当前能本地编译不代表这些发布条件已经完成。
+- [硬件、电池与装配](docs/HARDWARE.md)
+- [外壳文件与打印说明](hardware/enclosure/README.md)
+- [提示音与测试](docs/AUDIO.md)
+- [功能状态与验收说明](docs/UI-V6-VALIDATION.md)
+- [开发与构建说明](docs/PLAN.md)
+- [项目开发约定](AGENTS.md) · [本地库补丁](firmware/libraries/LOCAL_PATCHES.md) · [官方资料摘录](docs/ESP32-S3-Touch-LCD-4B官方资料.md)
