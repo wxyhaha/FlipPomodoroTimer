@@ -16,6 +16,18 @@
 | :---: | :---: |
 | ![电池与内部固定](docs/media/battery-compartment.jpg) | ![带散热槽的后盖](docs/media/rear.jpg) |
 
+### 外壳设计与实物对比
+
+| V12.9 外壳模型：整体与内部结构 | 已装配实物：电池仓与压条 |
+| :---: | :---: |
+| ![V12.9 外壳模型与剖面设计](hardware/enclosure/v12.9/preview.png) | ![实物电池仓与压条](docs/media/battery-compartment.jpg) |
+
+模型使用不同颜色区分主壳、后盖、电池与压条，实物采用 X 树脂打印。模型图中的尺寸为设计名义值；图内“仍需首件试装”为绘图时的历史备注，当前实物已完成照片所示装配，长期配合与牢固性仍需验证。
+
+![V12.9 外壳三视图与固定结构细节](hardware/enclosure/v12.9/details.png)
+
+[查看外壳结构与打印文件](hardware/enclosure/README.md) · [查看三维总装模型](hardware/enclosure/v12.9/assembly.glb)
+
 ### 翻面与时钟演示
 
 <p align="center">
