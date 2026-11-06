@@ -65,9 +65,8 @@ public:
 
     if (batteryConnected) {
       batteryPercent = pmu.getBatteryPercent();
-      // 限幅保证合理百分比
-      if (batteryPercent > 100) batteryPercent = 100;
-      if (batteryPercent < 0) batteryPercent = 0;
+      // Treat read errors or invalid values as unknown, not empty/full.
+      if (batteryPercent < 0 || batteryPercent > 100) batteryPercent = -1;
     } else {
       batteryPercent = -1;
     }

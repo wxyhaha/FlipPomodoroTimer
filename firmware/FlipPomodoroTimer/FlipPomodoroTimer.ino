@@ -26,6 +26,7 @@ RTCManager rtc;
 unsigned long lastTelemetryTime = 0;
 bool stableVbusIn = false;
 bool candidateVbusIn = false;
+bool startIdleTimerAfterUnplug = false;
 unsigned long vbusCandidateSince = 0;
 constexpr unsigned long USB_MODE_DEBOUNCE_MS = 1000;
 
@@ -39,17 +40,19 @@ void updateUsbMode(unsigned long now) {
 
   stableVbusIn = candidateVbusIn;
   if (stableVbusIn) {
+    startIdleTimerAfterUnplug = false;
     if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
-      engine.pause(PAUSE_BY_USB);
-      audio.stop();
-      Serial.printf("[POMO] Auto Pause by USB; keep %lu seconds\n", engine.getRemainingSeconds());
+      // USB power must not interrupt an active countdown or change its page.
+      Serial.println("[POWER] USB connected during countdown; keep timer and page");
+    } else {
+      ui.setMode(UI_MODE_CLOCK);
+      Serial.println("[POWER] Stable USB input -> Clock page");
     }
-    ui.setMode(UI_MODE_CLOCK);
-    Serial.println("[POWER] Stable USB input -> Clock page");
   } else {
     if (engine.pauseReason == PAUSE_BY_USB) engine.pauseReason = PAUSE_BY_USER;
     ui.setMode(UI_MODE_POMODORO);
-    Serial.println("[POWER] USB input removed -> Pomodoro page (timer stays paused)");
+    startIdleTimerAfterUnplug = engine.state == STATE_IDLE;
+    Serial.println("[POWER] USB input removed -> Pomodoro page");
   }
 }
 
@@ -226,6 +229,20 @@ void loop() {
         Serial.printf("[POMO] Tilt back to Same Face %u -> Resume Timer!\n", face);
         engine.resume();
       }
+    }
+  }
+
+  // A face may already be stable when USB is removed, so no orientation-change
+  // event will arrive. Wait for a confirmed side rather than starting while moving.
+  if (startIdleTimerAfterUnplug) {
+    if (stableVbusIn || engine.state != STATE_IDLE || ui.getMode() != UI_MODE_POMODORO) {
+      startIdleTimerAfterUnplug = false;
+    } else if (imu.isReady && imu.isTiltedFace() &&
+               imu.candidateOrientation == imu.currentOrientation &&
+               millis() - imu.candidateStartTime >= IMUSensor::STABLE_DURATION_MS) {
+      engine.startFace(imu.getFaceIndex(), imu.getFaceDurationSec());
+      startIdleTimerAfterUnplug = false;
+      Serial.println("[POMO] USB removed -> start current stable face");
     }
   }
 

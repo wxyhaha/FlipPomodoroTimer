@@ -214,17 +214,48 @@ void DisplayUI::drawHeader(const PowerManager &power) {
   gfx->fillCircle(436, 36, 20, timer ? 0x1082 : 0x0125);
   drawHourglass(44, 36, 24, timer ? kCyan : kMuted);
   drawClockIcon(436, 36, 26, timer ? kMuted : kCyan);
-  gfx->drawRoundRect(219, 26, 40, 20, 3, kIce);
-  gfx->fillRect(259, 32, 4, 8, kIce);
-  if (power.batteryConnected && power.batteryPercent >= 0) {
+  // Reserve a fixed-width percentage area so 9%, 98%, and 100% do not shift the icon.
+  const bool known = power.batteryConnected && power.batteryPercent >= 0;
+  uint16_t color = known && power.batteryPercent <= 20 ? kGold : kIce;
+  gfx->drawRoundRect(196, 26, 40, 20, 3, color);
+  gfx->fillRect(236, 32, 4, 8, color);
+  if (known) {
     int bars = constrain((power.batteryPercent + 24) / 25, 0, 4);
-    uint16_t color = power.batteryPercent <= 20 ? kGold : kIce;
-    for (int i = 0; i < bars; ++i) gfx->fillRect(223 + i * 8, 30, 6, 12, color);
+    for (int i = 0; i < bars; ++i) gfx->fillRect(200 + i * 8, 30, 6, 12, shade(color, power.charging ? 80 : 255));
   } else {
-    // Unknown/no battery is not a full battery: show a small dash.
-    gfx->drawFastHLine(232, 36, 14, kMuted);
+    gfx->drawFastHLine(209, 36, 14, kMuted);
   }
-  if (power.vbusIn) gfx->fillCircle(208, 36, 2, kCyan);
+  if (known && power.charging) {
+    // Dark outline keeps the cyan bolt visible over a filled battery.
+    gfx->fillRect(211, 28, 10, 16, kBlack);
+    gfx->fillTriangle(217, 28, 211, 37, 216, 37, kCyan);
+    gfx->fillTriangle(216, 44, 221, 34, 216, 34, kCyan);
+  }
+  // Compact seven-segment numerals match the main display's visual language.
+  static const uint8_t segments[10] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f};
+  char label[5];
+  if (known) snprintf(label, sizeof(label), "%d%%", constrain(power.batteryPercent, 0, 100));
+  else strcpy(label, "--%");
+  int x = 248;
+  for (const char *p = label; *p; ++p, x += 11) {
+    if (*p >= '0' && *p <= '9') {
+      uint8_t bits = segments[*p - '0'];
+      if (bits & 0x01) gfx->fillRect(x + 1, 29, 6, 2, color);
+      if (bits & 0x02) gfx->fillRect(x + 7, 30, 2, 6, color);
+      if (bits & 0x04) gfx->fillRect(x + 7, 37, 2, 6, color);
+      if (bits & 0x08) gfx->fillRect(x + 1, 42, 6, 2, color);
+      if (bits & 0x10) gfx->fillRect(x, 37, 2, 6, color);
+      if (bits & 0x20) gfx->fillRect(x, 30, 2, 6, color);
+      if (bits & 0x40) gfx->fillRect(x + 1, 35, 6, 2, color);
+    } else if (*p == '-') {
+      gfx->fillRect(x + 1, 35, 6, 2, kMuted);
+    } else {
+      gfx->drawCircle(x + 2, 31, 1, known ? color : kMuted);
+      gfx->drawLine(x, 43, x + 8, 29, known ? color : kMuted);
+      gfx->drawCircle(x + 6, 42, 1, known ? color : kMuted);
+    }
+  }
+  if (power.vbusIn) gfx->fillCircle(185, 36, 2, kCyan);
 }
 
 void DisplayUI::prepareRing() {
@@ -351,7 +382,7 @@ void DisplayUI::render(const PomodoroEngine &engine, const PowerManager &power, 
     lastLit = -1;
   }
   if (full || lastBattery != power.batteryPercent || lastVbus != power.vbusIn ||
-      lastBatteryConnected != power.batteryConnected) {
+      lastBatteryConnected != power.batteryConnected || lastCharging != power.charging) {
     gfx->fillRect(0, 8, 480, 48, kBlack);
     drawHeader(power); dirty.include(0, 8, 480, 48);
   }
@@ -434,12 +465,12 @@ void DisplayUI::update(const PomodoroEngine &e, const IMUSensor &, const PowerMa
   uint32_t date = r.currentDateTime.getYear() * 10000UL + r.currentDateTime.getMonth() * 100UL + r.currentDateTime.getDay();
   unsigned long remaining = e.getRemainingSeconds();
   bool changed = needsRedraw || lastState != e.state || lastBattery != p.batteryPercent ||
-      lastBatteryConnected != p.batteryConnected || lastVbus != p.vbusIn || lastDate != date ||
+      lastBatteryConnected != p.batteryConnected || lastCharging != p.charging || lastVbus != p.vbusIn || lastDate != date ||
       (currentMode == UI_MODE_CLOCK ? lastClockSecond != second :
        (lastSeconds != remaining || lastClockSecond / 60 != second / 60));
   if (!changed) return;
   render(e, p, r);
   lastState = e.state; lastBattery = p.batteryPercent; lastVbus = p.vbusIn;
-  lastBatteryConnected = p.batteryConnected; lastDate = date; lastTimeValid = r.timeValid;
+  lastBatteryConnected = p.batteryConnected; lastCharging = p.charging; lastDate = date; lastTimeValid = r.timeValid;
   lastSeconds = remaining; lastClockSecond = second; needsRedraw = false;
 }

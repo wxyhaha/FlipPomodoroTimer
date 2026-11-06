@@ -50,6 +50,7 @@ private:
   bool lastVbus = false;
   bool lastTimeValid = false;
   bool lastBatteryConnected = false;
+  bool lastCharging = false;
   uint16_t *ringPixels = nullptr;
   FramePresenter presenter;
   UiRect dirty;
