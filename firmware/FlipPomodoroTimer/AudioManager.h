@@ -12,7 +12,10 @@
 class AudioManager {
 public:
   bool isReady = false;
-  bool init(Arduino_XCA9554SWSPI *exp);
+  uint8_t currentVolume = 75;
+
+  bool init(Arduino_XCA9554SWSPI *exp, uint8_t initialVolume = 75);
+  void setVolume(uint8_t volume);
   void playStartTone();
   void playCompletionChime();
   void playClickTone();
@@ -26,6 +29,7 @@ private:
   struct Segment { uint16_t frequency, duration; };
   I2SClass i2s;
   Arduino_XCA9554SWSPI *expander = nullptr;
+  es8311_handle_t esHandle = nullptr;
   QueueHandle_t requests = nullptr;
   TaskHandle_t worker = nullptr;
   portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;

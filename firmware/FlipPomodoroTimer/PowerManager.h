@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include "pin_config.h"
 #include "XPowersLib.h"
+#include "I2CLock.h"
 
 class PowerManager {
 public:
@@ -16,14 +17,18 @@ public:
   bool charging = false;
   int batteryPercent = -1;
 
+  uint8_t userBrightness = 255;
   uint8_t currentBrightness = 255;
   uint8_t targetBrightness = 255;
+  bool lowPowerCpu = false;
 
   bool init(TwoWire &wire = Wire) {
-    // 初始化背光控制引脚（GPIO 4）
-    pinMode(BOARD_LCD_BACKLIGHT, OUTPUT);
-    setBacklight(255);
+    // 使用 LEDC PWM 驱动背光引脚 (GPIO 4)，5kHz 8-bit
+    // 硬件物理特性：GPIO 4 经反相晶体管 Q8 接入升压芯片反馈回路，LOW 点亮、HIGH 熄灭。
+    ledcAttach(BOARD_LCD_BACKLIGHT, 5000, 8);
+    setBacklight(userBrightness);
 
+    I2CLock lock;
     if (!pmu.begin(wire, AXP2101_SLAVE_ADDRESS, BOARD_I2C_SDA, BOARD_I2C_SCL)) {
       isReady = false;
       return false;
@@ -55,8 +60,10 @@ public:
     if (!isReady) return;
     unsigned long now = millis();
     if (sampled && now - lastSampleMs < 250) return;
-    sampled = true; lastSampleMs = now;
+    sampled = true;
+    lastSampleMs = now;
 
+    I2CLock lock;
     vbusIn = pmu.isVbusIn();
     vbusVoltageMv = pmu.getVbusVoltage();
     batteryConnected = pmu.isBatteryConnect();
@@ -88,9 +95,14 @@ public:
     powerKeyPolled = true;
     lastPowerKeyPollMs = now;
 
-    uint64_t irqStatus = pmu.getIrqStatus();
-    bool shortPress = pmu.isPekeyShortPressIrq();
-    if (irqStatus) pmu.clearIrqStatus();
+    uint64_t irqStatus = 0;
+    bool shortPress = false;
+    {
+      I2CLock lock;
+      irqStatus = pmu.getIrqStatus();
+      shortPress = pmu.isPekeyShortPressIrq();
+      if (irqStatus) pmu.clearIrqStatus();
+    }
 
     if (waitingForSecondPowerKeyClick && now - firstPowerKeyClickMs > POWER_KEY_DOUBLE_CLICK_MS) {
       waitingForSecondPowerKeyClick = false;
@@ -108,7 +120,9 @@ public:
   }
 
   void shutdown() {
-    if (isReady) pmu.shutdown();
+    if (!isReady) return;
+    I2CLock lock;
+    pmu.shutdown();
   }
 
   static constexpr unsigned long POWER_KEY_DOUBLE_CLICK_MS = 600;
@@ -118,25 +132,39 @@ public:
   unsigned long lastPowerKeyPollMs = 0;
   unsigned long firstPowerKeyClickMs = 0;
 
-  void setBacklight(uint8_t brightness) {
-    targetBrightness = brightness;
-    currentBrightness = brightness;
-    // 硬件物理特性：GPIO 4 经反相晶体管 Q8 接入升压芯片反馈回路。
-    // 输出 LOW 为 100% 满血最大亮度；输出 HIGH 为关断背光/最低微漏电流。
-    if (brightness > 0) {
-      digitalWrite(BOARD_LCD_BACKLIGHT, LOW);
-    } else {
-      digitalWrite(BOARD_LCD_BACKLIGHT, HIGH);
+  void setUserBrightness(uint8_t brightness) {
+    userBrightness = constrain(brightness, 30, 255);
+    if (currentBrightness > 0) {
+      setBacklight(userBrightness);
     }
   }
 
+  void setBacklight(uint8_t brightness) {
+    targetBrightness = brightness;
+    currentBrightness = brightness;
+    // 硬件反相：brightness=255 -> duty=0 (全低电平满亮)；brightness=0 -> duty=255 (全高电平熄灭)
+    uint32_t duty = 255 - brightness;
+    ledcWrite(BOARD_LCD_BACKLIGHT, duty);
+  }
+
   void dimForFlipDown() {
-    // 翻转朝下时关闭背光，极大降低功耗并消除桌面杂散漏光
     setBacklight(0);
   }
 
+  void dimForPause() {
+    if (currentBrightness > 0) {
+      uint8_t dimmed = max<uint8_t>(28, userBrightness / 3);
+      setBacklight(dimmed);
+    }
+  }
+
   void restoreFromFlipUp() {
-    // 翻回正面时立刻恢复背光
-    setBacklight(255);
+    setBacklight(userBrightness);
+  }
+
+  void setLowPowerCpu(bool enable) {
+    if (lowPowerCpu == enable) return;
+    lowPowerCpu = enable;
+    setCpuFrequencyMhz(enable ? 80 : 240);
   }
 };

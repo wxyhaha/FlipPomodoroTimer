@@ -3,10 +3,10 @@
 
 enum TimerState {
   STATE_IDLE,           // 待机准备就绪
-  STATE_FOCUS_RUNNING,   // 专注计时中
-  STATE_FOCUS_PAUSED,    // 专注暂停中
-  STATE_BREAK_RUNNING,   // 休息计时中
-  STATE_BREAK_PAUSED,    // 休息暂停中
+  STATE_FOCUS_RUNNING,  // 专注计时中
+  STATE_FOCUS_PAUSED,   // 专注暂停中
+  STATE_BREAK_RUNNING,  // 休息计时中
+  STATE_BREAK_PAUSED,   // 休息暂停中
   STATE_COMPLETED       // 计时周期完成
 };
 
@@ -14,12 +14,12 @@ enum PauseReason {
   PAUSE_NONE,
   PAUSE_BY_FLIP,        // 由翻转动作触发暂停
   PAUSE_BY_USER,        // 由用户按键/触摸手动暂停
-  PAUSE_BY_USB          // USB 接入后自动暂停并切换到时钟页
+  PAUSE_BY_USB          // 预留：USB 相关暂停标记
 };
 
 class PomodoroEngine {
 public:
-  static constexpr unsigned long DEFAULT_FOCUS_SECONDS = 30 * 60;  // 30 分钟 (面三标准深度专注)
+  static constexpr unsigned long DEFAULT_FOCUS_SECONDS = 60 * 60;  // 60 分钟 (面三标准深度专注)
   static constexpr unsigned long DEFAULT_BREAK_SECONDS = 5 * 60;   // 5 分钟 (短休息)
 
   TimerState state = STATE_IDLE;
@@ -27,22 +27,32 @@ public:
 
   unsigned long focusDurationSec = DEFAULT_FOCUS_SECONDS;
   unsigned long breakDurationSec = DEFAULT_BREAK_SECONDS;
+  bool autoBreakEnabled = true;
 
   unsigned long currentTotalDurationSec = DEFAULT_FOCUS_SECONDS;
   unsigned long elapsedMs = 0;
   unsigned long lastResumeTimestampMs = 0;
 
   uint16_t completedPomodoros = 0;
-  uint8_t activeFace = 3; // 默认活跃面为面 3 (30 分钟标准专注)
+  uint8_t activeFace = 3; // 默认活跃面为面 3 (60 分钟标准专注)
   bool stateChanged = true;
   bool isAlerting = false;
+  bool lastSessionWasBreak = false;
+  bool completionRecorded = false;
 
-  void begin() {
+  void begin(unsigned long initialFocusSec = DEFAULT_FOCUS_SECONDS,
+             unsigned long initialBreakSec = DEFAULT_BREAK_SECONDS,
+             bool autoBreak = true) {
     state = STATE_IDLE;
     pauseReason = PAUSE_NONE;
     activeFace = 3;
+    focusDurationSec = initialFocusSec;
+    breakDurationSec = initialBreakSec;
+    autoBreakEnabled = autoBreak;
     currentTotalDurationSec = focusDurationSec;
     elapsedMs = 0;
+    lastSessionWasBreak = false;
+    completionRecorded = false;
     stateChanged = true;
   }
 
@@ -55,6 +65,8 @@ public:
     state = STATE_FOCUS_RUNNING;
     pauseReason = PAUSE_NONE;
     isAlerting = false;
+    lastSessionWasBreak = false;
+    completionRecorded = false;
     stateChanged = true;
   }
 
@@ -65,6 +77,8 @@ public:
     elapsedMs = 0;
     lastResumeTimestampMs = millis();
     isAlerting = false;
+    lastSessionWasBreak = false;
+    completionRecorded = false;
     stateChanged = true;
   }
 
@@ -75,6 +89,8 @@ public:
     elapsedMs = 0;
     lastResumeTimestampMs = millis();
     isAlerting = false;
+    lastSessionWasBreak = true;
+    completionRecorded = false;
     stateChanged = true;
   }
 
@@ -116,8 +132,13 @@ public:
     } else if (state == STATE_FOCUS_PAUSED || state == STATE_BREAK_PAUSED) {
       resume();
     } else if (state == STATE_COMPLETED) {
+      bool wasBreak = lastSessionWasBreak;
       confirmCompleted();
-      startFocus();
+      if (!wasBreak && autoBreakEnabled) {
+        startBreak();
+      } else {
+        startFocus();
+      }
     }
   }
 
@@ -127,13 +148,17 @@ public:
     currentTotalDurationSec = focusDurationSec;
     elapsedMs = 0;
     isAlerting = false;
+    lastSessionWasBreak = false;
+    completionRecorded = false;
     stateChanged = true;
   }
 
   void confirmCompleted() {
     isAlerting = false;
     if (state == STATE_COMPLETED) {
-      completedPomodoros++;
+      if (!lastSessionWasBreak) {
+        completedPomodoros++;
+      }
       state = STATE_IDLE;
       currentTotalDurationSec = focusDurationSec;
       elapsedMs = 0;
@@ -156,6 +181,7 @@ public:
 
       if (curElapsed >= totalTargetMs) {
         elapsedMs = totalTargetMs;
+        lastSessionWasBreak = (state == STATE_BREAK_RUNNING);
         state = STATE_COMPLETED;
         isAlerting = true;
         stateChanged = true;

@@ -1,10 +1,10 @@
 #include "AudioManager.h"
 #include "PianoAudio.h"
-#include "ExpanderLock.h"
+#include "I2CLock.h"
 #include <math.h>
 
 bool AudioManager::startWorker() {
-  (void)expanderMutex(); // Initialize before either task can use the shared bus.
+  (void)i2cMutex(); // Initialize before either task can use the shared bus.
   if (!expander) return false;
   for (int i = 0; i < 256; ++i) sine[i] = lroundf(sinf(i * 6.28318530718f / 256) * 26000);
   requests = xQueueCreate(1, sizeof(Request));
@@ -20,6 +20,7 @@ bool AudioManager::startWorker() {
 
 void AudioManager::enqueue(Cue cue) {
   if (!isReady || !requests) return;
+  if (currentVolume == 0 && cue != Cue::Test) return;
   portENTER_CRITICAL(&stateMux);
   if (cue == Cue::Click && selected != Cue::None) {
     portEXIT_CRITICAL(&stateMux);
@@ -29,6 +30,13 @@ void AudioManager::enqueue(Cue cue) {
   selected = cue;
   portEXIT_CRITICAL(&stateMux);
   xQueueOverwrite(requests, &request);
+}
+
+void AudioManager::setVolume(uint8_t volume) {
+  currentVolume = constrain(volume, 0, 85);
+  if (!isReady || !esHandle) return;
+  I2CLock lock;
+  es8311_voice_volume_set(esHandle, currentVolume == 0 ? 0 : currentVolume, NULL);
 }
 
 void AudioManager::playStartTone() { enqueue(Cue::Start); }
@@ -134,12 +142,12 @@ void AudioManager::taskLoop() {
         request.cue == Cue::Start ? "start" : request.cue == Cue::Test ? "speaker-test" : "click";
     Serial.printf("[AUDIO] cue=%s begin\n", name);
     uint32_t playbackStarted = millis();
-    { ExpanderLock lock; expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, HIGH); }
+    { I2CLock lock; expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, HIGH); }
     vTaskDelay(pdMS_TO_TICKS(5));
     bool played = playCue(request);
     // I2S write queues DMA data; don't mute the amp while the final note is pending.
     bool drained = played && tone(0, 160, request.id);
-    { ExpanderLock lock; expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, LOW); }
+    { I2CLock lock; expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, LOW); }
     if (!drained) tone(0, 160, request.id, false); // Clear queued tail while muted.
     portENTER_CRITICAL(&stateMux);
     bool finished = generation == request.id;
@@ -151,38 +159,40 @@ void AudioManager::taskLoop() {
   }
 }
 
-bool AudioManager::init(Arduino_XCA9554SWSPI *exp) {
-    expander = exp;
-    if (expander) {
-      expander->pinMode(BOARD_EXPANDER_AMP_CTRL, OUTPUT);
-      expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, LOW); // 默认关闭功放省电
-    }
+bool AudioManager::init(Arduino_XCA9554SWSPI *exp, uint8_t initialVolume) {
+  expander = exp;
+  currentVolume = constrain(initialVolume, 0, 85);
+  if (expander) {
+    I2CLock lock;
+    expander->pinMode(BOARD_EXPANDER_AMP_CTRL, OUTPUT);
+    expander->digitalWrite(BOARD_EXPANDER_AMP_CTRL, LOW); // 默认关闭功放省电
+  }
 
-    i2s.setPins(PIN_ES7210_BCLK, PIN_ES7210_LRCK, PIN_ES8311_DOUT, PIN_ES7210_DIN, PIN_ES7210_MCLK);
-    if (!i2s.begin(I2S_MODE_STD, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
-      isReady = false;
-      return false;
-    }
+  i2s.setPins(PIN_ES7210_BCLK, PIN_ES7210_LRCK, PIN_ES8311_DOUT, PIN_ES7210_DIN, PIN_ES7210_MCLK);
+  if (!i2s.begin(I2S_MODE_STD, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
+    isReady = false;
+    return false;
+  }
 
-    es8311_handle_t es_handle = es8311_create(0, ES8311_ADDRRES_0);
-    if (!es_handle) {
-      isReady = false;
-      return false;
-    }
+  I2CLock lock;
+  esHandle = es8311_create(0, ES8311_ADDRRES_0);
+  if (!esHandle) {
+    isReady = false;
+    return false;
+  }
 
-    const es8311_clock_config_t es_clk = {
-      .mclk_inverted = false,
-      .sclk_inverted = false,
-      .mclk_from_mclk_pin = true,
-      .mclk_frequency = 16000 * 256,
-      .sample_frequency = 16000
-    };
+  const es8311_clock_config_t es_clk = {
+    .mclk_inverted = false,
+    .sclk_inverted = false,
+    .mclk_from_mclk_pin = true,
+    .mclk_frequency = 16000 * 256,
+    .sample_frequency = 16000
+  };
 
-    if (es8311_init(es_handle, &es_clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) == ESP_OK &&
-        es8311_sample_frequency_config(es_handle, es_clk.mclk_frequency, es_clk.sample_frequency) == ESP_OK &&
-        // This driver's percentage maps across the entire -95.5..+32dB range.
-        // 75 maps to register 0xBF = 0dB; 100 means +32dB and clips the PCM.
-        es8311_voice_volume_set(es_handle, 75, NULL) == ESP_OK) {
+  if (es8311_init(esHandle, &es_clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) == ESP_OK &&
+      es8311_sample_frequency_config(esHandle, es_clk.mclk_frequency, es_clk.sample_frequency) == ESP_OK &&
+      es8311_voice_volume_set(esHandle, currentVolume, NULL) == ESP_OK) {
+    if (currentVolume == 75) {
       Wire.beginTransmission(ES8311_ADDRRES_0);
       Wire.write(0x32);
       if (Wire.endTransmission(false) != 0 ||
@@ -191,11 +201,12 @@ bool AudioManager::init(Arduino_XCA9554SWSPI *exp) {
         Serial.println("[AUDIO] DAC 0dB volume readback failed");
         return false;
       }
-      Serial.printf("[AUDIO] DAC volume=0xBF (0dB), I2S configured=%lu Hz/%u bits\n",
-                    static_cast<unsigned long>(i2s.txSampleRate()), static_cast<unsigned>(i2s.txDataWidth()));
-      return startWorker();
     }
-
-    isReady = false;
-    return false;
+    Serial.printf("[AUDIO] DAC vol=%u, I2S configured=%lu Hz/%u bits\n",
+                  currentVolume, static_cast<unsigned long>(i2s.txSampleRate()), static_cast<unsigned>(i2s.txDataWidth()));
+    return startWorker();
   }
+
+  isReady = false;
+  return false;
+}

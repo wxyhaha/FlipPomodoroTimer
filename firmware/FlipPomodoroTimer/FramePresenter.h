@@ -29,6 +29,8 @@ private:
   volatile uint32_t frameCompleteCount = 0;
   bool healthy = true;
   bool buffersDiverged = false;
+  uint32_t consecutiveTimeouts = 0;
+  unsigned long recoveryRetryAt = 0;
   uint16_t *animationTexture = nullptr;
   int textureSize = 0;
   uint32_t lastRenderUs = 0, lastWaitUs = 0;

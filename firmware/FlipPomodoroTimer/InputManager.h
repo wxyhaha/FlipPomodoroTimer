@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include "pin_config.h"
 #include "TouchDrvGT911.hpp"
+#include "I2CLock.h"
 
 enum UserAction {
   ACTION_NONE,
@@ -32,6 +33,7 @@ public:
   bool init(TwoWire &wire = Wire) {
     pinMode(BOARD_BOOT_PIN, INPUT_PULLUP);
 
+    I2CLock lock;
     if (touch.begin(wire, GT911_SLAVE_ADDRESS_L, BOARD_I2C_SDA, BOARD_I2C_SCL)) {
       touch.setMaxTouchPoint(1);
       touchReady = true;
@@ -75,7 +77,11 @@ public:
     // 2. 处理触摸屏触控事件（全屏轻触交互）
     if (touchReady) {
       int16_t x[1], y[1];
-      uint8_t touched = touch.getPoint(x, y, 1);
+      uint8_t touched = 0;
+      {
+        I2CLock lock;
+        touched = touch.getPoint(x, y, 1);
+      }
       if (suppressTouchUntilRelease) {
         if (touched == 0) suppressTouchUntilRelease = false;
         return result;

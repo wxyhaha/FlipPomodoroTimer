@@ -30,28 +30,32 @@ bool FramePresenter::begin(Arduino_ESP32RGBPanel *panel) {
 }
 
 bool FramePresenter::swap(UiRect dirty, bool synchronize) {
-  // Bounce DMA reads internal RAM; the SDK copies cached PSRAM into it.
-  // This presenter requires the configured bounce-buffer mode.
-
   if (esp_lcd_panel_draw_bitmap(handle, 0, 0, 480, 480, back) != ESP_OK) {
     healthy = false;
-    Serial.println("[UI] RGB frame submission failed; retain last frame");
+    recoveryRetryAt = millis() + 3000;
+    Serial.println("[UI] RGB frame submission failed; schedule recovery");
     return false;
   }
-  // In bounce mode the SDK switches its source at frame completion and then
-  // invokes this callback. It explicitly declares the old source reusable.
   uint32_t startCount = frameCompleteCount, startMs = millis(), waitStart = micros();
   while (static_cast<uint32_t>(frameCompleteCount - startCount) < 1) {
     if (millis() - startMs > 150) {
-      ++timeouts; healthy = false;
-      Serial.println("[UI] frame-release timeout; stop writes to protect front buffer");
+      ++timeouts;
+      ++consecutiveTimeouts;
+      buffersDiverged = true;
+      if (consecutiveTimeouts >= 5) {
+        healthy = false;
+        recoveryRetryAt = millis() + 3000;
+        Serial.println("[UI] repeated frame-release timeouts; pause swaps for 3s");
+      } else {
+        Serial.println("[UI] frame-release timeout; skip swap and resync next frame");
+      }
       return false;
     }
     delay(1);
   }
+  consecutiveTimeouts = 0;
   lastWaitUs = micros() - waitStart;
   uint16_t *old = front; front = back; back = old;
-  // Synchronize only the changed physical region after old front is retired.
   if (synchronize) {
     for (int y = dirty.y; y < dirty.bottom; ++y) {
       memcpy(back + y * 480 + dirty.x, front + y * 480 + dirty.x,
@@ -64,7 +68,14 @@ bool FramePresenter::swap(UiRect dirty, bool synchronize) {
 }
 
 bool FramePresenter::present(const uint16_t *canvas, uint8_t rotation, UiRect dirty) {
-  if (!healthy || dirty.empty()) return false;
+  if (!healthy) {
+    if (millis() < recoveryRetryAt) return false;
+    healthy = true;
+    consecutiveTimeouts = 0;
+    buffersDiverged = true;
+    Serial.println("[UI] attempting display recovery");
+  }
+  if (dirty.empty()) return false;
   if (buffersDiverged) dirty.full();
   UiRect physical;
   int r = rotation & 3;
@@ -106,8 +117,6 @@ bool FramePresenter::prepareAnimation(const uint16_t *canvas) {
   }
   if (!animationTexture) return false;
   int scale = 480 / textureSize;
-  // Point sampling avoids the extra blur of averaging while preserving the
-  // fast internal-RAM rotation path. The final frame remains full resolution.
   for (int y = 0; y < textureSize; ++y) for (int x = 0; x < textureSize; ++x) {
     animationTexture[y * textureSize + x] = canvas[(y * scale + scale / 2) * 480 + x * scale + scale / 2];
   }
@@ -149,7 +158,6 @@ bool FramePresenter::presentRotated(const uint16_t *canvas, float degrees) {
   }
   lastRenderUs = micros() - started;
   UiRect full; full.full();
-  // Every intermediate frame overwrites the back buffer. No mirror copy needed.
   return swap(full, false);
 }
 

@@ -1,14 +1,5 @@
 #pragma once
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
+#include "I2CLock.h"
 
-inline SemaphoreHandle_t expanderMutex() {
-  static StaticSemaphore_t storage;
-  static SemaphoreHandle_t mutex = xSemaphoreCreateMutexStatic(&storage);
-  return mutex;
-}
-class ExpanderLock {
-public:
-  ExpanderLock() { xSemaphoreTake(expanderMutex(), portMAX_DELAY); }
-  ~ExpanderLock() { xSemaphoreGive(expanderMutex()); }
-};
+// Kept for backward compatibility; all TCA9554 & Wire access shares i2cMutex().
+using ExpanderLock = I2CLock;
