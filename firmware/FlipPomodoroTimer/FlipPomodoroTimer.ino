@@ -191,6 +191,9 @@ void loop() {
       else if (!strcmp(command, "CHIME_TEST")) {
         ui.triggerHourlyChimeAnim();
         audio.playHourlyChime();
+      } else if (!strcmp(command, "DEMO_DAY")) {
+        ui.setMode(UI_MODE_CLOCK);
+        ui.toggleClockDemo();
       }
       commandLength = 0;
     } else if (commandLength < sizeof(command) - 1) command[commandLength++] = c;
@@ -333,6 +336,10 @@ void loop() {
       ui.triggerClockPetHappy();
       audio.playPetTone();
       Serial.println("[UI] Clock pixel cat petted!");
+    } else if (ui.checkClockDemoClick(input.lastTapX, input.lastTapY) && !input.lastTapFromButton) {
+      ui.toggleClockDemo();
+      audio.playClickTone();
+      Serial.printf("[UI] Clock 24h demo -> %s\n", ui.isClockDemoActive() ? "ON" : "OFF");
     } else if (ui.checkPortalButtonClick(input.lastTapX, input.lastTapY) && !input.lastTapFromButton) {
       if (portal.isActive()) portal.stop();
       else portal.start();

@@ -50,10 +50,14 @@ public:
   bool checkScreenOffClick(int16_t x, int16_t y) const;
   bool checkClockStyleButtonClick(int16_t x, int16_t y) const;
   bool checkClockPetClick(int16_t x, int16_t y, uint8_t clockTheme) const;
+  bool checkClockDemoClick(int16_t x, int16_t y) const;
   bool checkPortalButtonClick(int16_t x, int16_t y) const;
   bool checkThemeButtonClick(int16_t x, int16_t y) const;
   void triggerClockPetHappy();
   void triggerHourlyChimeAnim();
+  void toggleClockDemo();
+  void stopClockDemo() { clockDemoMode = false; }
+  bool isClockDemoActive() const { return clockDemoMode; }
   bool isAnimating() const { return rotating; }
   void forceRedraw() { needsRedraw = true; }
 
@@ -87,6 +91,8 @@ private:
   unsigned long petHappyUntilMs = 0;
   unsigned long hourlyChimeStartMs = 0;
   bool hourlyChimeActive = false;
+  bool clockDemoMode = false;
+  unsigned long clockDemoStartMs = 0;
   float yarnX = 32.0f;
   float yarnVx = 0.0f;
   unsigned long lastClockAnimMs = 0;
