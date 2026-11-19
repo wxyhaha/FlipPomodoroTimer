@@ -25,7 +25,7 @@ bool FramePresenter::begin(Arduino_ESP32RGBPanel *panel) {
   callbacks.on_vsync = onVsync;
   callbacks.on_frame_buf_complete = onFrameComplete;
   if (esp_lcd_rgb_panel_register_event_callbacks(handle, &callbacks, this) != ESP_OK) return false;
-  Serial.println("[UI] RGB double buffer enabled; 10-line bounce buffers; driver frame-release fence");
+  Serial.println("[UI] RGB double buffer enabled; 20-line bounce buffers (12MHz); driver frame-release fence");
   return true;
 }
 
