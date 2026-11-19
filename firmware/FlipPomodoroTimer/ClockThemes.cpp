@@ -364,11 +364,10 @@ void drawAlphaRing(uint16_t *fb, int cx, int cy, float radius, float thickness, 
 }
 
 // ============================================================================
-// 像素小猫小屋逻辑像素绘制器 (120 x 56 逻辑像素 -> 480 x 224 屏幕区域 y=212..435)
+// 像素小猫全屏时间小世界绘制器 (120 x 120 逻辑像素 -> 480 x 480 全屏 4x 放大)
 // ============================================================================
 constexpr int kSceneW = 120;
-constexpr int kSceneH = 56;
-constexpr int kSceneScreenY = 212;
+constexpr int kSceneH = 120;
 static uint16_t sSceneBuf[kSceneW * kSceneH];
 
 inline void spx(int x, int y, uint16_t c) {
@@ -618,10 +617,13 @@ void drawPixelCatSprite(int cx, int cy, CatPeriod period, bool happy, bool chime
     spx(cx + 3 + shift, hcy - 1, kWhite);
 
     if (period == CAT_WORK) {
-      uint16_t gCol = rgb565(240, 205, 95);
-      for (int dx = -6; dx <= -2; ++dx) { spx(cx + dx, hcy - 2, gCol); spx(cx + dx, hcy + 2, gCol); }
-      for (int dx = 2; dx <= 6; ++dx) { spx(cx + dx, hcy - 2, gCol); spx(cx + dx, hcy + 2, gCol); }
-      for (int dy = -2; dy <= 2; ++dy) {
+      // 深棕玳瑁黑框圆眼镜（与橘猫脸形成高对比度）
+      uint16_t gCol = rgb565(68, 44, 34);
+      spx(cx - 5, hcy - 2, gCol); spx(cx - 4, hcy - 2, gCol); spx(cx - 3, hcy - 2, gCol);
+      spx(cx - 5, hcy + 2, gCol); spx(cx - 4, hcy + 2, gCol); spx(cx - 3, hcy + 2, gCol);
+      spx(cx + 3, hcy - 2, gCol); spx(cx + 4, hcy - 2, gCol); spx(cx + 5, hcy - 2, gCol);
+      spx(cx + 3, hcy + 2, gCol); spx(cx + 4, hcy + 2, gCol); spx(cx + 5, hcy + 2, gCol);
+      for (int dy = -1; dy <= 1; ++dy) {
         spx(cx - 6, hcy + dy, gCol); spx(cx - 2, hcy + dy, gCol);
         spx(cx + 2, hcy + dy, gCol); spx(cx + 6, hcy + dy, gCol);
       }
@@ -639,10 +641,71 @@ void drawPixelCatSprite(int cx, int cy, CatPeriod period, bool happy, bool chime
   sRect(cx + 6, hcy + 1, cx + 8, hcy + 3, blush);
 }
 
+// 圆润粗体 6x8 像素数字点阵 (0..9 + ':')，用于全景大落地窗内统一画风的像素时钟
+static const uint8_t kPixFont6x8[11][8] = {
+  {0b011110, 0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b011110}, // 0
+  {0b001100, 0b011100, 0b111100, 0b001100, 0b001100, 0b001100, 0b001100, 0b111111}, // 1
+  {0b011110, 0b110011, 0b000011, 0b000110, 0b001100, 0b011000, 0b110000, 0b111111}, // 2
+  {0b011110, 0b110011, 0b000011, 0b001110, 0b000011, 0b000011, 0b110011, 0b011110}, // 3
+  {0b000110, 0b001110, 0b011110, 0b110110, 0b110110, 0b111111, 0b000110, 0b000110}, // 4
+  {0b111111, 0b110000, 0b111110, 0b000011, 0b000011, 0b000011, 0b110011, 0b011110}, // 5
+  {0b011110, 0b110000, 0b110000, 0b111110, 0b110011, 0b110011, 0b110011, 0b011110}, // 6
+  {0b111111, 0b110011, 0b000011, 0b000110, 0b001100, 0b001100, 0b001100, 0b001100}, // 7
+  {0b011110, 0b110011, 0b110011, 0b011110, 0b110011, 0b110011, 0b110011, 0b011110}, // 8
+  {0b011110, 0b110011, 0b110011, 0b011111, 0b000011, 0b000011, 0b110011, 0b011110}, // 9
+  {0b000000, 0b001100, 0b001100, 0b000000, 0b000000, 0b001100, 0b001100, 0b000000}, // :
+};
+
+void drawPixGlyph(int x, int y, char ch, int scale, uint16_t color, uint8_t alpha = 255) {
+  int idx = (ch == ':') ? 10 : ((ch >= '0' && ch <= '9') ? (ch - '0') : -1);
+  if (idx < 0) return;
+  for (int r = 0; r < 8; ++r) {
+    uint8_t row = kPixFont6x8[idx][r];
+    for (int c = 0; c < 6; ++c) {
+      if (row & (1 << (5 - c))) {
+        for (int sy = 0; sy < scale; ++sy) {
+          for (int sx = 0; sx < scale; ++sx) {
+            if (alpha == 255) spx(x + c * scale + sx, y + r * scale + sy, color);
+            else spxBlend(x + c * scale + sx, y + r * scale + sy, color, alpha);
+          }
+        }
+      }
+    }
+  }
+}
+
+void drawPixText(int x, int y, const char *str, int scale, uint16_t color, uint16_t shadowCol,
+                 uint8_t shadowAlpha, uint8_t colonAlpha = 255) {
+  int curX = x;
+  for (size_t i = 0; str[i]; ++i) {
+    char ch = str[i];
+    int cw = (ch == ':') ? (4 * scale) : (6 * scale);
+    int gx = (ch == ':') ? (curX - scale) : curX;
+    uint8_t fgAlpha = (ch == ':') ? colonAlpha : 255;
+    if (shadowAlpha > 0) {
+      drawPixGlyph(gx + 1, y + 1, ch, scale, shadowCol,
+                   static_cast<uint8_t>((static_cast<uint16_t>(shadowAlpha) * fgAlpha) / 255U));
+    }
+    drawPixGlyph(gx, y, ch, scale, color, fgAlpha);
+    curX += cw + scale;
+  }
+}
+
+// 绘制小巧可爱的 5x5 像素小番茄图标
+void drawMiniTomatoIcon(int x, int y) {
+  spx(x + 2, y, rgb565(65, 200, 90));
+  spx(x + 1, y + 1, rgb565(65, 200, 90));
+  spx(x + 3, y + 1, rgb565(65, 200, 90));
+  sRect(x + 1, y + 2, x + 4, y + 5, rgb565(242, 68, 58));
+  spx(x, y + 3, rgb565(242, 68, 58));
+  spx(x + 4, y + 3, rgb565(242, 68, 58));
+  spx(x + 1, y + 2, rgb565(255, 160, 150));
+}
+
 void blitPixelScene4x(uint16_t *fb) {
   for (int sy = 0; sy < kSceneH; ++sy) {
     const uint16_t *src = sSceneBuf + sy * kSceneW;
-    int baseY = kSceneScreenY + sy * 4;
+    int baseY = sy * 4;
     for (int repY = 0; repY < 4; ++repY) {
       uint16_t *dst = fb + (baseY + repY) * 480;
       for (int sx = 0; sx < kSceneW; ++sx) {
@@ -666,14 +729,14 @@ bool DisplayUI::checkClockStyleButtonClick(int16_t x, int16_t y) const {
 
 bool DisplayUI::checkClockPetClick(int16_t x, int16_t y, uint8_t clockTheme) const {
   if (currentMode != UI_MODE_CLOCK || clockTheme != CLOCK_STYLE_PIXEL_CAT) return false;
-  // 小屋区域（避开底部左右两个按钮）
-  return x >= 40 && x < 440 && y >= 212 && y < 416;
+  // 下半区房间互动区域（避开底部左右两个按钮）
+  return x >= 24 && x < 456 && y >= 256 && y < 428;
 }
 
 bool DisplayUI::checkClockDemoClick(int16_t x, int16_t y) const {
   if (currentMode != UI_MODE_CLOCK) return false;
-  // 点击上半区时间数字位置切换 24 小时实机演示模式
-  return x >= 40 && x < 440 && y >= 72 && y < 210;
+  // 点击上半区时间数字/落地窗区域切换 24 小时实机演示模式
+  return x >= 32 && x < 448 && y >= 68 && y < 244;
 }
 
 void DisplayUI::toggleClockDemo() {
@@ -780,8 +843,8 @@ bool DisplayUI::clockNeedsAnimTick(const IMUSensor &imu, const RTCManager &rtc, 
       yarnVx *= 0.86f;
       if (fabsf(yarnVx) < 0.08f && tiltX == 0.0f) yarnVx = 0.0f;
       yarnX += yarnVx * dt * 12.0f;
-      if (yarnX < 17.0f) { yarnX = 17.0f; yarnVx = -yarnVx * 0.45f; }
-      if (yarnX > 48.0f) { yarnX = 48.0f; yarnVx = -yarnVx * 0.45f; }
+      if (yarnX < 20.0f) { yarnX = 20.0f; yarnVx = -yarnVx * 0.45f; }
+      if (yarnX > 56.0f) { yarnX = 56.0f; yarnVx = -yarnVx * 0.45f; }
     }
     yarnMoving = (fabsf(yarnVx) > 0.12f || fabsf(tiltX) > 0.14f);
   }
@@ -985,93 +1048,70 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     drawDate(rtc, kIce);
   } else {
     // ========================================================================
-    // 主题 1：像素小猫 · 时间小世界（底部去文字留白 + 统计联动盆栽 + 交互彩蛋）
+    // 主题 1：像素小猫 · 全屏时间小世界（方案三：全景大落地窗 + 阳光光束 + 编织地毯）
     // ========================================================================
     CatPeriod period = getCatPeriod(hour, effectiveTimeValid);
     bool happy = (now < petHappyUntilMs);
 
-    RGB bgC, skyTop, skyBot, wallC, wallHi, floorC, deskC, deskDark;
-    uint16_t timeCol, accentCol;
+    RGB skyTop, skyBot, wallC, wallHi, beamC, floorC, floorSeam, deskC, deskDark, curtainC, curtainSh;
+    uint16_t timeCol, secCol, accentCol;
     bool lampOn = false;
 
     if (period == CAT_MORNING) {
-      bgC = {18, 22, 34}; skyTop = {110, 155, 225}; skyBot = {255, 188, 130};
-      wallC = {52, 46, 56}; wallHi = {66, 58, 70}; floorC = {78, 56, 44};
-      deskC = {132, 92, 62}; deskDark = {92, 62, 42};
-      timeCol = rgb565(255, 246, 232); accentCol = rgb565(255, 178, 92);
+      skyTop = {92, 145, 220}; skyBot = {255, 184, 128};
+      wallC = {56, 48, 60}; wallHi = {68, 58, 72}; beamC = {74, 52, 42};
+      floorC = {92, 64, 48}; floorSeam = {72, 48, 36};
+      deskC = {144, 98, 66}; deskDark = {102, 68, 44};
+      curtainC = {188, 128, 108}; curtainSh = {142, 92, 78};
+      timeCol = rgb565(255, 248, 236); secCol = rgb565(255, 212, 142); accentCol = rgb565(255, 194, 108);
     } else if (period == CAT_WORK) {
-      bgC = {14, 20, 30}; skyTop = {62, 152, 235}; skyBot = {158, 218, 252};
-      wallC = {46, 54, 68}; wallHi = {58, 68, 86}; floorC = {72, 54, 42};
-      deskC = {138, 98, 66}; deskDark = {95, 65, 44};
-      timeCol = rgb565(245, 250, 255); accentCol = rgb565(72, 215, 135);
+      skyTop = {52, 138, 224}; skyBot = {142, 206, 248};
+      wallC = {48, 56, 72}; wallHi = {58, 68, 86}; beamC = {68, 52, 40};
+      floorC = {86, 62, 46}; floorSeam = {68, 48, 36};
+      deskC = {146, 104, 68}; deskDark = {104, 70, 46};
+      curtainC = {112, 152, 188}; curtainSh = {82, 116, 148};
+      timeCol = rgb565(255, 255, 255); secCol = rgb565(214, 244, 255); accentCol = rgb565(125, 238, 175);
     } else if (period == CAT_SUNSET) {
-      bgC = {20, 14, 24}; skyTop = {75, 52, 118}; skyBot = {250, 122, 72};
-      wallC = {52, 36, 46}; wallHi = {68, 46, 56}; floorC = {64, 42, 38};
-      deskC = {118, 76, 54}; deskDark = {82, 50, 36};
-      timeCol = rgb565(255, 232, 212); accentCol = rgb565(255, 132, 82);
+      skyTop = {68, 44, 112}; skyBot = {246, 116, 66};
+      wallC = {52, 36, 48}; wallHi = {64, 44, 58}; beamC = {58, 38, 36};
+      floorC = {72, 48, 42}; floorSeam = {54, 34, 30};
+      deskC = {124, 80, 56}; deskDark = {86, 54, 38};
+      curtainC = {148, 92, 108}; curtainSh = {108, 64, 78};
+      timeCol = rgb565(255, 238, 220); secCol = rgb565(255, 182, 128); accentCol = rgb565(255, 168, 112);
       lampOn = true;
     } else {
-      bgC = {8, 10, 18}; skyTop = {12, 18, 42}; skyBot = {26, 38, 76};
-      wallC = {24, 28, 44}; wallHi = {32, 38, 56}; floorC = {34, 28, 32};
-      deskC = {62, 48, 42}; deskDark = {42, 32, 28};
-      timeCol = rgb565(175, 195, 228); accentCol = rgb565(115, 155, 230);
+      skyTop = {10, 16, 38}; skyBot = {24, 36, 74};
+      wallC = {24, 28, 44}; wallHi = {30, 36, 54}; beamC = {34, 28, 34};
+      floorC = {38, 30, 34}; floorSeam = {26, 20, 24};
+      deskC = {66, 50, 44}; deskDark = {44, 34, 30};
+      curtainC = {52, 62, 92}; curtainSh = {36, 44, 68};
+      timeCol = rgb565(212, 226, 252); secCol = rgb565(142, 178, 236); accentCol = rgb565(142, 178, 236);
       lampOn = true;
     }
-    if (happy) accentCol = rgb565(255, 105, 140);
-
-    uint16_t bg565 = rgb565(bgC.r, bgC.g, bgC.b);
-    gfx->fillScreen(bg565);
-
-    // 1. 上半区清爽时间 + 日期/今日专注数
-    char timeBuf[16];
-    snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u", hour, minute);
-    int tw = digitTextWidth(timeBuf, 64);
-    int sw = digitTextWidth("00", 23);
-    int left = (480 - tw - 10 - sw) / 2;
-    if (effectiveTimeValid) {
-      drawAlphaDigitsOnFb(fb, timeBuf, left, 68, 64, 104, timeCol);
-      snprintf(timeBuf, sizeof(timeBuf), "%02u", second);
-      drawAlphaDigitsOnFb(fb, timeBuf, left + tw + 10, 74, 23, 39, accentCol);
-    } else {
-      centeredText("--:--", 150, 3, kMuted);
-    }
-
-    uint16_t todayCnt = stats.getTodayCount(rtc.getDateYyyyMmDd());
-    char subLine[48];
-    if (rtc.timeValid) {
-      const char *weekdays[] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
-      uint8_t wk = rtc.currentDateTime.getWeek();
-      snprintf(subLine, sizeof(subLine), "%02u-%02u %s  ·  今日专注 %u",
-               rtc.currentDateTime.getMonth(), rtc.currentDateTime.getDay(),
-               wk < 7 ? weekdays[wk] : "", todayCnt);
-    } else {
-      snprintf(subLine, sizeof(subLine), "等待校时  ·  今日专注 %u", todayCnt);
-    }
-    centeredText(subLine, 198, 1, accentCol);
-
-    // 2. 绘制 120x56 像素小屋到局部缓冲
-    sRect(0, 0, kSceneW, kSceneH, bg565);
-    const int rx0 = 10, ry0 = 1, rx1 = 110, ry1 = 55;
-    uint16_t borderCol = chimeActive ? kGold : (period == CAT_SLEEP ? rgb565(38, 46, 72) : rgb565(70, 82, 105));
-    sRect(rx0 - 1, ry0 - 1, rx1 + 1, ry1 + 1, borderCol);
+    if (happy) accentCol = rgb565(255, 130, 165);
 
     uint16_t wall565 = rgb565(wallC.r, wallC.g, wallC.b);
     uint16_t wallHi565 = rgb565(wallHi.r, wallHi.g, wallHi.b);
+    uint16_t beam565 = rgb565(beamC.r, beamC.g, beamC.b);
     uint16_t floor565 = rgb565(floorC.r, floorC.g, floorC.b);
-    uint16_t floorSeam = rgb565(max(0, floorC.r - 12), max(0, floorC.g - 10), max(0, floorC.b - 8));
+    uint16_t floorSeam565 = rgb565(floorSeam.r, floorSeam.g, floorSeam.b);
     uint16_t desk565 = rgb565(deskC.r, deskC.g, deskC.b);
     uint16_t deskDark565 = rgb565(deskDark.r, deskDark.g, deskDark.b);
 
-    for (int y = ry0; y < 41; ++y) {
-      for (int x = rx0; x < rx1; ++x) spx(x, y, (x % 6 == 0) ? wallHi565 : wall565);
+    // 1. 全屏墙壁与木地板 (0..119)
+    for (int y = 0; y < 98; ++y) {
+      for (int x = 0; x < kSceneW; ++x) spx(x, y, (x % 6 == 0) ? wallHi565 : wall565);
     }
-    sRect(rx0, 40, rx1, 42, deskDark565);
-    sRect(rx0, 42, rx1, ry1, floor565);
-    sRect(rx0, 46, rx1, 47, floorSeam);
-    sRect(rx0, 51, rx1, 52, floorSeam);
+    // 天花板顶部木质横梁 (托住顶部状态栏)
+    sRect(0, 0, kSceneW, 14, rgb565(max(0, wallC.r - 12), max(0, wallC.g - 12), max(0, wallC.b - 12)));
+    sRect(0, 14, kSceneW, 16, beam565);
+    // 墙脚踢脚线与全屏木地板 (y: 98..119)
+    sRect(0, 96, kSceneW, 98, deskDark565);
+    sRect(0, 98, kSceneW, kSceneH, floor565);
+    for (int fy : {103, 108, 113, 118}) sRect(0, fy, kSceneW, fy + 1, floorSeam565);
 
-    // 3. 左侧窗户 (x: 16..54, y: 5..32)
-    const int wx0 = 16, wy0 = 5, wx1 = 54, wy1 = 32;
+    // 2. 全景大落地窗 (x: 8..112, y: 17..67)
+    const int wx0 = 8, wy0 = 17, wx1 = 112, wy1 = 67;
     for (int y = wy0; y < wy1; ++y) {
       float t = static_cast<float>(y - wy0) / static_cast<float>(wy1 - wy0 - 1);
       RGB sc = lerpRgb(skyTop, skyBot, t);
@@ -1079,160 +1119,232 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
       for (int x = wx0; x < wx1; ++x) spx(x, y, c565);
     }
 
-    int cloudDrift = static_cast<int>((now / 2500UL) % 12UL) - 4;
+    int cloudDrift = static_cast<int>((now / 2600UL) % 16UL) - 6;
     if (period == CAT_MORNING) {
-      sCircle(42, 28, 5.8f, rgb565(255, 228, 120));
-      sCloud(25 + cloudDrift / 2, 13, rgb565(255, 232, 215), wx0, wx1);
+      sCircle(94, 58, 9.5f, rgb565(255, 230, 125));
+      sCloud(28 + cloudDrift / 2, 27, rgb565(255, 234, 218), wx0, wx1);
+      sCloud(68 - cloudDrift / 3, 24, rgb565(255, 224, 206), wx0, wx1);
     } else if (period == CAT_WORK) {
-      sCloud(26 + cloudDrift / 2, 12, rgb565(250, 252, 255), wx0, wx1);
-      sCloud(43 - cloudDrift / 3, 18, rgb565(240, 248, 255), wx0, wx1);
+      sCircle(98, 25, 7.0f, rgb565(255, 246, 185));
+      sCloud(28 + cloudDrift / 2, 26, rgb565(250, 253, 255), wx0, wx1);
+      sCloud(66 - cloudDrift / 3, 23, rgb565(242, 248, 255), wx0, wx1);
+      sCloud(88 + cloudDrift / 4, 34, rgb565(235, 244, 255), wx0, wx1);
     } else if (period == CAT_SUNSET) {
-      sCircle(35, 28, 6.2f, rgb565(255, 200, 88));
+      sCircle(84, 58, 10.0f, rgb565(255, 202, 92));
       for (int x = wx0; x < wx1; ++x) {
-        int mh = static_cast<int>(4.0f + 2.8f * sinf((x - wx0) * 0.22f));
-        for (int y = wy1 - mh; y < wy1; ++y) spx(x, y, rgb565(55, 34, 58));
+        int mh = static_cast<int>(6.0f + 4.5f * sinf((x - wx0) * 0.11f) + 2.0f * cosf((x - wx0) * 0.25f));
+        for (int y = wy1 - mh; y < wy1; ++y) spx(x, y, rgb565(56, 32, 58));
       }
       int birdX = 24 + ((now / 1200) % 2);
-      spx(birdX - 1, 12, rgb565(45, 25, 40)); spx(birdX, 13, rgb565(45, 25, 40)); spx(birdX + 1, 12, rgb565(45, 25, 40));
-      spx(birdX + 4, 15, rgb565(45, 25, 40)); spx(birdX + 5, 16, rgb565(45, 25, 40)); spx(birdX + 6, 15, rgb565(45, 25, 40));
+      spx(birdX - 1, 25, rgb565(45, 25, 40)); spx(birdX, 26, rgb565(45, 25, 40)); spx(birdX + 1, 25, rgb565(45, 25, 40));
+      spx(birdX + 5, 28, rgb565(45, 25, 40)); spx(birdX + 6, 29, rgb565(45, 25, 40)); spx(birdX + 7, 28, rgb565(45, 25, 40));
     } else {
-      // 深夜弯月 + 闪烁星点 + 窗外流星
-      sCircle(25, 12, 3.8f, rgb565(250, 236, 165));
-      RGB midSky = lerpRgb(skyTop, skyBot, 0.26f);
-      sCircle(27, 11, 3.3f, rgb565(midSky.r, midSky.g, midSky.b));
-      const uint8_t sPts[5][2] = {{37,9},{46,13},{33,19},{48,23},{22,23}};
-      for (int i = 0; i < 5; ++i) {
+      // 深夜大弯月 + 呼吸繁星 + 窗外流星
+      sCircle(24, 26, 5.2f, rgb565(250, 236, 168));
+      RGB midSky = lerpRgb(skyTop, skyBot, 0.20f);
+      sCircle(26.5f, 24.5f, 4.5f, rgb565(midSky.r, midSky.g, midSky.b));
+      const uint8_t sPts[][2] = {
+        {38,22},{54,20},{72,24},{88,21},{102,26},{44,32},{96,36},{20,42},{104,48},{64,50}
+      };
+      for (int i = 0; i < 10; ++i) {
         bool dim = ((now / 900 + i) % 3 == 0);
-        spx(sPts[i][0], sPts[i][1], dim ? rgb565(130, 155, 210) : rgb565(255, 250, 220));
+        spx(sPts[i][0], sPts[i][1], dim ? rgb565(120, 148, 205) : rgb565(255, 250, 222));
       }
       if (meteorStartMs != 0 && now >= meteorStartMs) {
         float p = static_cast<float>(now - meteorStartMs) / 1300.0f;
         if (p >= 0.0f && p <= 1.0f) {
-          int mx = 48 - static_cast<int>(p * 24.0f);
-          int my = 9 + static_cast<int>(p * 12.0f);
-          for (int k = 0; k < 5; ++k) {
+          int mx = 98 - static_cast<int>(p * 52.0f);
+          int my = 22 + static_cast<int>(p * 24.0f);
+          for (int k = 0; k < 7; ++k) {
             int px = mx + k, py = my - k / 2;
             if (px >= wx0 && px < wx1 && py >= wy0 && py < wy1) {
-              spxBlend(px, py, kWhite, static_cast<uint8_t>((5 - k) * 48));
+              spxBlend(px, py, kWhite, static_cast<uint8_t>((7 - k) * 35));
             }
           }
         }
       }
     }
 
-    // 整点窗户柔和金色微光
+    // 整点窗景柔和金色微光
     if (chimeActive) {
       float p = static_cast<float>(now - hourlyChimeStartMs) / 3200.0f;
-      uint8_t glowA = static_cast<uint8_t>(sinf(p * kPi) * 90.0f);
+      uint8_t glowA = static_cast<uint8_t>(sinf(p * kPi) * 85.0f);
       for (int y = wy0; y < wy1; ++y)
         for (int x = wx0; x < wx1; ++x)
           spxBlend(x, y, kGold, glowA);
     }
 
-    // 十字木窗框
-    uint16_t frameC = (period == CAT_SLEEP) ? rgb565(62, 56, 72) : rgb565(155, 118, 86);
-    sRect(wx0 - 1, wy0 - 1, wx1 + 1, wy0 + 1, frameC);
-    sRect(wx0 - 1, wy1 - 1, wx1 + 1, wy1 + 2, frameC);
-    sRect(wx0 - 1, wy0, wx0 + 1, wy1, frameC);
-    sRect(wx1 - 1, wy0, wx1 + 1, wy1, frameC);
-    sRect((wx0 + wx1) / 2, wy0, (wx0 + wx1) / 2 + 1, wy1, frameC);
-    sRect(wx0, (wy0 + wy1) / 2, wx1, (wy0 + wy1) / 2 + 1, frameC);
+    // 3. 落地窗细木格窗棂 + 两侧温馨窗帘 + 宽大木质窗台
+    uint16_t frameC = (period == CAT_SLEEP) ? rgb565(64, 58, 76) : rgb565(156, 118, 84);
+    uint16_t frameHi = (period == CAT_SLEEP) ? rgb565(82, 74, 96) : rgb565(186, 146, 106);
+    sRect(32, wy0, 33, wy1, frameC);
+    sRect(88, wy0, 89, wy1, frameC);
+    uint16_t cur565 = rgb565(curtainC.r, curtainC.g, curtainC.b);
+    uint16_t curSh565 = rgb565(curtainSh.r, curtainSh.g, curtainSh.b);
+    for (int y = wy0; y < wy1; ++y) {
+      int cw = (y < wy0 + 18) ? 6 : ((y < wy0 + 34) ? 5 : 4);
+      for (int dx = 0; dx < cw; ++dx) {
+        spx(wx0 + dx, y, (dx % 2 == 0) ? cur565 : curSh565);
+        spx(wx1 - 1 - dx, y, (dx % 2 == 0) ? cur565 : curSh565);
+      }
+    }
+    uint16_t borderC = chimeActive ? kGold : frameC;
+    sRect(wx0 - 1, wy0 - 1, wx1 + 1, wy0 + 1, borderC);
+    sRect(wx0 - 1, wy0, wx0 + 1, wy1, borderC);
+    sRect(wx1 - 1, wy0, wx1 + 1, wy1, borderC);
+    sRect(wx0 - 3, wy1, wx1 + 3, wy1 + 2, frameHi);
+    sRect(wx0 - 3, wy1 + 2, wx1 + 3, wy1 + 3, frameC);
 
-    // 4. 窗台专注成长小盆栽（与今日专注次数联动）
-    sRect(19, 28, 26, 32, period == CAT_SLEEP ? rgb565(85, 48, 42) : rgb565(185, 92, 62));
-    sRect(18, 27, 27, 28, period == CAT_SLEEP ? rgb565(98, 56, 48) : rgb565(205, 108, 74));
+    // 4. 在全景窗景中央直接绘制圆润粗体像素时间 (2x 逻辑放大 -> 12x16 逻辑像素/字)
+    char hmStr[8];
+    if (effectiveTimeValid) snprintf(hmStr, sizeof(hmStr), "%02u:%02u", hour, minute);
+    else strcpy(hmStr, "--:--");
+    uint8_t colonA = clockDemoMode ? 255 : ((second % 2 == 0) ? 255 : 145);
+    uint16_t shadow565 = (period == CAT_SLEEP) ? rgb565(8, 10, 22) : rgb565(22, 34, 56);
+    if (effectiveTimeValid) {
+      drawPixText(23, 27, hmStr, 2, timeCol, shadow565, 130, colonA);
+      char secStr[4];
+      snprintf(secStr, sizeof(secStr), "%02u", second);
+      drawPixText(92, 29, secStr, 1, secCol, shadow565, 110);
+    } else {
+      sRect(36, 36, 48, 38, timeCol); sRect(52, 36, 64, 38, timeCol);
+    }
+
+    // 5. 窗台下方暖色“阳光斜射光束”
+    if (period == CAT_MORNING || period == CAT_WORK) {
+      uint16_t sunBeamCol = (period == CAT_MORNING) ? rgb565(255, 218, 165) : rgb565(255, 244, 210);
+      for (int y = wy1 + 3; y < 114; ++y) {
+        float shift = (y - (wy1 + 3)) * 0.55f;
+        int bx0 = static_cast<int>(16 + shift);
+        int bx1 = static_cast<int>(54 + shift);
+        uint8_t a = static_cast<uint8_t>(26.0f * (1.0f - (y - 70) / 55.0f));
+        for (int x = bx0; x < bx1 && x < kSceneW; ++x) spxBlend(x, y, sunBeamCol, a);
+      }
+    }
+
+    // 6. 窗台专注成长小盆栽（左窗台 x=15..24, y=59..67）
+    sRect(16, 63, 23, 67, period == CAT_SLEEP ? rgb565(85, 48, 42) : rgb565(185, 92, 62));
+    sRect(15, 62, 24, 63, period == CAT_SLEEP ? rgb565(98, 56, 48) : rgb565(205, 108, 74));
     uint16_t leafC = (period == CAT_SLEEP) ? rgb565(36, 95, 58) : rgb565(68, 192, 88);
-    // 0 颗：小嫩芽
-    spx(22, 26, leafC); spx(22, 25, leafC); spx(21, 25, leafC);
-    if (todayCnt >= 1) { // 1~2 颗：茂盛绿叶
-      spx(23, 25, leafC); spx(20, 24, leafC); spx(24, 24, leafC); spx(22, 24, leafC); spx(22, 23, leafC);
+    uint16_t todayCnt = stats.getTodayCount(rtc.getDateYyyyMmDd());
+    spx(19, 61, leafC); spx(19, 60, leafC); spx(18, 60, leafC);
+    if (todayCnt >= 1) {
+      spx(20, 60, leafC); spx(17, 59, leafC); spx(21, 59, leafC); spx(19, 59, leafC); spx(19, 58, leafC);
     }
-    if (todayCnt >= 3) { // 3~4 颗：开花
-      spx(20, 23, rgb565(255, 225, 90));
-      spx(24, 23, rgb565(255, 225, 90));
+    if (todayCnt >= 3) {
+      spx(17, 58, rgb565(255, 225, 90));
+      spx(21, 58, rgb565(255, 225, 90));
     }
-    if (todayCnt >= 5) { // 5 颗以上：结出小红番茄果子
-      spx(20, 24, rgb565(255, 75, 75));
-      spx(24, 24, rgb565(255, 75, 75));
-      spx(22, 22, rgb565(255, 95, 85));
+    if (todayCnt >= 5) {
+      spx(17, 59, rgb565(255, 75, 75));
+      spx(21, 59, rgb565(255, 75, 75));
+      spx(19, 57, rgb565(255, 95, 85));
     }
 
-    // 5. 地板粉色毛线球（QMI8658 重力感应左右滚动！）
+    // 7. 地板编织小地毯 (x: 18..58, y: 103..114) 与粉色毛线球
+    uint16_t rugBase = (period == CAT_SLEEP) ? rgb565(68, 62, 74) : rgb565(198, 178, 146);
+    uint16_t rugStripe = (period == CAT_SLEEP) ? rgb565(84, 76, 90) : rgb565(222, 198, 162);
+    uint16_t rugTrim = (period == CAT_SLEEP) ? rgb565(104, 86, 86) : rgb565(212, 118, 108);
+    sRect(19, 104, 57, 113, rugBase);
+    sRect(21, 105, 55, 112, rugStripe);
+    sRect(23, 106, 53, 111, rugBase);
+    for (int y = 104; y < 113; y += 2) { spx(18, y, rugTrim); spx(57, y, rugTrim); }
+
     int yBallX = static_cast<int>(lroundf(yarnX));
     if (period != CAT_SLEEP || happy) {
-      sCircle(static_cast<float>(yBallX), 46.0f, 3.2f, rgb565(235, 105, 130), true, rgb565(135, 45, 65));
-      // 随位置旋转的小线头
+      sCircle(static_cast<float>(yBallX), 107.0f, 3.2f, rgb565(235, 105, 130), true, rgb565(135, 45, 65));
       int tailDir = (yarnVx >= 0.0f) ? -1 : 1;
-      spx(yBallX + tailDir * 3, 48, rgb565(235, 105, 130));
-      spx(yBallX + tailDir * 4, 49, rgb565(235, 105, 130));
-      spx(yBallX + tailDir * 5, 49, rgb565(235, 105, 130));
+      spx(yBallX + tailDir * 3, 109, rgb565(235, 105, 130));
+      spx(yBallX + tailDir * 4, 110, rgb565(235, 105, 130));
+      spx(yBallX + tailDir * 5, 110, rgb565(235, 105, 130));
     }
 
-    // 6. 家具与主角小猫
+    // 8. 书桌 / 小夜灯猫窝 & 橘白小猫主角
     bool blink = ((now % 4800UL) < 170UL);
     int tailSwing = ((now / 900UL) % 2 == 0) ? 0 : 1;
-    int eyeShift = (yBallX < 26) ? -1 : ((yBallX > 40) ? 1 : 0);
+    int eyeShift = (yBallX < 30) ? -1 : ((yBallX > 46) ? 1 : 0);
 
     if (period == CAT_SLEEP && !happy && !chimeActive) {
-      // 床头柜与暖黄小夜灯
-      sRect(46, 35, 54, 46, rgb565(68, 48, 38));
-      for (int y = 21; y < 39; ++y) {
-        for (int x = 38; x < 63; ++x) {
-          float dist = hypotf(x - 50.0f, y - 29.0f);
-          if (dist < 11.0f && x >= rx0 && x < rx1 && y >= ry0 && y < ry1) {
+      sRect(50, 96, 58, 108, rgb565(68, 48, 38));
+      for (int y = 82; y < 100; ++y) {
+        for (int x = 42; x < 67; ++x) {
+          float dist = hypotf(x - 54.0f, y - 90.0f);
+          if (dist < 11.0f) {
             uint8_t a = static_cast<uint8_t>((1.0f - dist / 11.0f) * 105.0f);
             spxBlend(x, y, rgb565(255, 215, 115), a);
           }
         }
       }
-      sRect(49, 31, 51, 35, rgb565(180, 150, 95));
-      sRect(47, 27, 53, 31, rgb565(255, 225, 130));
-      drawPixelCatSprite(80, 39, CAT_SLEEP, false, false, false, 0, 0, now);
+      sRect(53, 92, 55, 96, rgb565(180, 150, 95));
+      sRect(51, 88, 57, 92, rgb565(255, 225, 130));
+      drawPixelCatSprite(84, 101, CAT_SLEEP, false, false, false, 0, 0, now);
     } else {
-      // 书桌
-      sRect(56, 33, 106, 36, desk565);
-      sRect(56, 36, 106, 38, deskDark565);
-      sRect(60, 38, 63, 50, deskDark565);
-      sRect(100, 38, 103, 50, deskDark565);
+      sRect(58, 89, 110, 92, desk565);
+      sRect(58, 92, 110, 94, deskDark565);
+      sRect(62, 94, 65, 106, deskDark565);
+      sRect(103, 94, 106, 106, deskDark565);
 
-      // 桌上咖啡杯与飘动热气
-      sRect(60, 28, 65, 33, rgb565(240, 238, 232));
-      spx(65, 29, rgb565(240, 238, 232));
-      spx(65, 31, rgb565(240, 238, 232));
-      spx(66, 30, rgb565(240, 238, 232));
+      sRect(62, 84, 67, 89, rgb565(240, 238, 232));
+      spx(67, 85, rgb565(240, 238, 232));
+      spx(67, 87, rgb565(240, 238, 232));
+      spx(68, 86, rgb565(240, 238, 232));
       if (period == CAT_MORNING || period == CAT_WORK) {
         int stOff = ((now / 700UL) % 2 == 0) ? 0 : -1;
-        spx(61, 26 + stOff, rgb565(210, 225, 240));
-        spx(62, 24 + stOff, rgb565(210, 225, 240));
-        spx(63, 26 - stOff, rgb565(210, 225, 240));
-        spx(64, 23 - stOff, rgb565(210, 225, 240));
+        spx(63, 82 + stOff, rgb565(210, 225, 240));
+        spx(64, 80 + stOff, rgb565(210, 225, 240));
+        spx(65, 82 - stOff, rgb565(210, 225, 240));
+        spx(66, 79 - stOff, rgb565(210, 225, 240));
       }
 
       if (period == CAT_WORK) {
-        sRect(67, 31, 75, 33, rgb565(245, 242, 230));
-        sRect(71, 31, 72, 33, rgb565(180, 175, 165));
+        sRect(69, 87, 77, 89, rgb565(245, 242, 230));
+        sRect(73, 87, 74, 89, rgb565(180, 175, 165));
       }
 
-      // 桌上台灯
       if (lampOn || chimeActive) {
-        for (int y = 15; y < 35; ++y) {
-          for (int x = 88; x < 108; ++x) {
-            float dist = hypotf(x - 99.0f, y - 24.0f);
-            if (dist < 11.0f && x >= rx0 && x < rx1 && y >= ry0 && y < ry1) {
+        for (int y = 71; y < 91; ++y) {
+          for (int x = 90; x < 110; ++x) {
+            float dist = hypotf(x - 101.0f, y - 80.0f);
+            if (dist < 11.0f) {
               uint8_t a = static_cast<uint8_t>((1.0f - dist / 11.0f) * 112.0f);
               spxBlend(x, y, rgb565(255, 210, 110), a);
             }
           }
         }
       }
-      sRect(97, 32, 102, 33, rgb565(120, 125, 138));
-      sRect(99, 26, 100, 32, rgb565(150, 155, 168));
-      sRect(96, 23, 102, 26, (lampOn || chimeActive) ? rgb565(255, 225, 130) : rgb565(165, 175, 190));
+      sRect(99, 88, 104, 89, rgb565(120, 125, 138));
+      sRect(101, 82, 102, 88, rgb565(150, 155, 168));
+      sRect(98, 79, 104, 82, (lampOn || chimeActive) ? rgb565(255, 225, 130) : rgb565(165, 175, 190));
 
-      drawPixelCatSprite(82, 25, period, happy, chimeActive, blink, tailSwing, eyeShift, now);
+      drawPixelCatSprite(84, 81, period, happy, chimeActive, blink, tailSwing, eyeShift, now);
     }
 
+    // 9. 在窗景下沿右侧点缀迷你小番茄图标 + 今日专注颗数，居中配日期
+    drawMiniTomatoIcon(76, 59);
+    char cntBuf[8];
+    snprintf(cntBuf, sizeof(cntBuf), "%u", todayCnt);
+    drawPixText(83, 58, cntBuf, 1, accentCol, shadow565, 100);
+
     blitPixelScene4x(fb);
+
+    // 清晰中文日期叠加在窗景下沿左侧（刚好与右侧小番茄图标对称！）
+    char dateChip[32];
+    if (rtc.timeValid) {
+      const char *weekdays[] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
+      uint8_t wk = rtc.currentDateTime.getWeek();
+      snprintf(dateChip, sizeof(dateChip), "%02u-%02u %s",
+               rtc.currentDateTime.getMonth(), rtc.currentDateTime.getDay(),
+               wk < 7 ? weekdays[wk] : "");
+    } else {
+      strcpy(dateChip, "等待校时");
+    }
+    gfx->setTextSize(1);
+    gfx->setTextColor(shadow565);
+    gfx->setCursor(150, 250);
+    gfx->print(dateChip);
+    gfx->setTextColor(timeCol);
+    gfx->setCursor(148, 248);
+    gfx->print(dateChip);
   }
 
   // 顶部导航栏、左下角息屏按钮、右下角时钟主题切换按钮（均叠加在天幕/背景之上）
