@@ -7,6 +7,7 @@
 #include "DisplayUI.h"
 #include "InputManager.h"
 #include "AudioManager.h"
+#include "VoiceCmdManager.h"
 #include "RTCManager.h"
 #include "ConfigManager.h"
 #include "StatsManager.h"
@@ -20,6 +21,7 @@ PowerManager power;
 DisplayUI ui;
 InputManager input;
 AudioManager audio;
+VoiceCmdManager voice;
 RTCManager rtc;
 ConfigManager config;
 StatsManager stats;
@@ -36,6 +38,7 @@ unsigned long schedLastRepeatMs = 0;
 uint8_t schedRepeatCount = 0;
 
 void syncScheduleUI() {
+  voice.setListening(config.data.scheduleMode && schedPopupVisible);
   ScheduleUIState st;
   if (config.data.scheduleMode && rtc.timeValid) {
     int nowMin = rtc.getHour() * 60 + rtc.getMinute();
@@ -44,6 +47,8 @@ void syncScheduleUI() {
       st.active = true;
       st.popupVisible = schedPopupVisible;
       st.skipped = schedSkipped;
+      st.voiceListening = voice.isListening();
+      st.voiceRecognizing = voice.isRecognizing();
       st.category = cur.category;
       st.startMin = cur.startMin;
       st.endMin = cur.endMin;
@@ -214,10 +219,16 @@ void setup() {
     Serial.println("FAILED!");
   }
 
-  // 7. 初始化音频提示 (ES8311 Codec)
+  // 7. 初始化音频提示 (ES8311 Codec) 与离线中文语音指令 (ES7210 + ESP-SR)
   Serial.print("Init Audio (ES8311 Codec)... ");
   if (audio.init(ui.getExpander(), config.data.audioVolume)) {
     Serial.println("OK");
+    Serial.print("Init Voice Command (ES7210 + ESP-SR CN)... ");
+    if (voice.begin(audio)) {
+      Serial.println("OK");
+    } else {
+      Serial.println("DISABLED/NOT FOUND");
+    }
   } else {
     Serial.println("DISABLED/NOT FOUND");
   }
@@ -358,7 +369,7 @@ void loop() {
           power.setLowPowerCpu(false);
           ui.setPanelOutputOff(false, power);
         }
-        audio.playCompletionChime();
+        audio.playStartTone();
         schedLastRepeatMs = now;
         schedRepeatCount = 0;
         Serial.printf("[SCHED] Item arrived: %s\n", schedule.items[idx].name);
@@ -369,7 +380,7 @@ void loop() {
       syncScheduleUI();
     } else if (schedPopupVisible && !imu.isFlippedDown() && !ui.isPanelOutputOff() &&
                schedRepeatCount < 3 && (now - schedLastRepeatMs >= 15000UL)) {
-      audio.playCompletionChime();
+      audio.playStartTone();
       schedLastRepeatMs = now;
       schedRepeatCount++;
     }
@@ -454,6 +465,15 @@ void loop() {
   }
 
   // 6. 轮询触摸与物理按键输入
+  if (config.data.scheduleMode && schedPopupVisible) {
+    ui.setVoiceRecognizing(voice.isRecognizing());
+  }
+  VoiceCommand vcmd = voice.pollCommand();
+  if (vcmd != VOICE_CMD_NONE && config.data.scheduleMode && schedPopupVisible) {
+    if (vcmd == VOICE_CMD_CONFIRM) confirmScheduleItem();
+    else if (vcmd == VOICE_CMD_SKIP) skipScheduleItem();
+  }
+
   if (ui.isAnimating()) input.cancelTouch();
   UserAction action = input.update();
   if (action == ACTION_TAP && ui.isAnimating() && !input.lastTapFromButton) {
@@ -482,7 +502,7 @@ void loop() {
             schedPopupVisible = true;
             schedActiveCategory = schedule.items[idx].category;
             syncScheduleUI();
-            audio.playCompletionChime();
+            audio.playStartTone();
             schedLastRepeatMs = now;
             schedRepeatCount = 0;
           } else {

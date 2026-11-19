@@ -9,7 +9,7 @@ bool AudioManager::startWorker() {
   for (int i = 0; i < 256; ++i) sine[i] = lroundf(sinf(i * 6.28318530718f / 256) * 26000);
   requests = xQueueCreate(1, sizeof(Request));
   if (!requests) return false;
-  if (xTaskCreatePinnedToCore(taskEntry, "timer-audio", 4096, this, 1, &worker, 0) != pdPASS) {
+  if (xTaskCreatePinnedToCore(taskEntry, "timer-audio", 4096, this, 4, &worker, 0) != pdPASS) {
     vQueueDelete(requests); requests = nullptr;
     return false;
   }

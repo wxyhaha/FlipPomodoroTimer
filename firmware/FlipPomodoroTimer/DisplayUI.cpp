@@ -354,7 +354,14 @@ void DisplayUI::drawSchedulePopup(const RTCManager &rtc) {
   if (remainMin < 1) remainMin = 1;
   char sub[48];
   snprintf(sub, sizeof(sub), "按时间表结束 · 剩余约 %d 分钟", remainMin);
-  centeredTextInBox(sub, 240, 250, 1, kIce);
+  centeredTextInBox(sub, 240, 246, 1, kIce);
+  if (schedState.voiceListening) {
+    if (schedState.voiceRecognizing) {
+      centeredTextInBox("正在识别语音...", 240, 268, 1, kMint);
+    } else {
+      centeredTextInBox("语音待命：说「确定」或「跳过」", 240, 268, 1, kGold);
+    }
+  }
 
   // 确定按钮 (左)
   gfx->fillRoundRect(74, 280, 154, 54, 12, 0x1549);

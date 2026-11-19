@@ -40,7 +40,7 @@
 
 - **翻面选时与防误触预览**：四个侧面（面一至面四）默认分别对应 5、10、60、30 分钟；翻面 100ms~600ms 缓冲期显示目标面时长预览，稳定 600ms 后按对应时长开始计时。QMI8658 识别姿态，屏幕随方向旋转。
 - **完整番茄工作流与统计**：支持专注完成后点击进入休息倒计时（默认 5 分钟），NVS 持久化记录今日与近 7 日专注统计，并可在统计页查看近 7 日柱状图。
-- **双计时模式（自由翻转 ⇄ 每日日程）**：番茄钟页与时钟页左下角均可一键切换「自由翻转番茄钟」与「每日日程模式」（同步移除原手动息屏按钮）。日程模式下预置 07:30–23:30 共 26 条每日作息/学习时间表（最多支持 32 条，不支持 0 分钟条目），到点自动弹窗提醒，点击「确定开始」或短按 BOOT 后严格对齐时间表结束时刻倒计时，支持「跳过本次」；进入日程模式后锁定在番茄钟/日程页且计时不可暂停或手动重置，直至再次点击左下角退出日程模式；仅分类为「专注」的日程计入专注统计。
+- **双计时模式（自由翻转 ⇄ 每日日程 + 离线中文语音弹窗）**：番茄钟页与时钟页左下角均可一键切换「自由翻转番茄钟」与「每日日程模式」（同步移除原手动息屏按钮）。日程模式下预置 07:30–23:30 共 26 条每日作息/学习时间表（最多支持 32 条，不支持 0 分钟条目），到点自动弹窗提醒，支持触控、短按 BOOT 或直接语音说「确定 / 开始 / 确认」对齐时间表结束时刻倒计时，或说「跳过 / 取消」跳过本次（基于板载 ES7210 + ESP-SR 中文 MultiNet7 `mn7_cn`，仅弹窗期间开麦监听，检测到人声时弹窗实时显示「正在识别语音...」，离线推理约需 2 秒）；进入日程模式后锁定在番茄钟/日程页且计时不可暂停或手动重置，直至再次点击左下角退出日程模式；仅分类为「专注」的日程计入专注统计。
 - **免重编译配网与 Web 控制台**：在统计页一键开启 Web 控制台，优先连接已保存 Wi-Fi（局域网浏览器直连设备 IP，无需切换手机网络）；若未配置或 8 秒内连不上，自动回退为 `FlipPomodoro-Setup` 热点（`192.168.4.1`，支持 Captive Portal），可直接配置 Wi-Fi、时区、四面时长、休息时长、音量、亮度、自动息屏时间、番茄钟/时钟页主题、整点报时开关、工作模式，以及在线增删改每日日程表（`/api/schedule`）。
 - **直观显示与多款表盘主题**：支持在统计页右上角或 Web 控制台一键切换番茄钟页面的 **科技环 / Fliqlo 4 卡 3D 翻页 / 照片级 IN-18 辉光管 / 像素风小番茄 / 流沙沙漏** 共 5 款主题；时钟页支持通过右下角图标或 Web 控制台在 **极简天象时钟（24 小时昼夜渐变 + 4×4 Bayer 有序抖动 + 真实日月轨迹与实时月相 + 底部三层分形雾化山脉 + QMI8658 陀螺仪视差 + 深夜微闪星空与流星）** 与 **像素小猫 · 全屏时间小世界（无遮挡全景大落地窗融入带深色描边的圆润像素大时间、4 时段作息、斜射阳光光束、编织地毯、今日专注次数联动窗台盆栽成长、触控摸摸头爱心）** 之间切换，支持点击时间数字开启 **24H 昼夜实机演示模式**，并支持时钟页整点报时仪式（22:00–07:00 夜间自动免打扰，仅播视觉动效）。
 - **触摸与实体按键**：顶部支持番茄钟 / 统计 / 时钟三页切换，触摸或 BOOT 短按控制计时、长按重置。触摸热区随显示方向映射。
@@ -98,16 +98,16 @@
 
 ## 构建与烧录
 
-使用 Arduino CLI 1.5.1 和 `esp32:esp32@3.3.11`；仓库中的 `firmware/libraries/` 包含本项目需要的本地库及显示驱动补丁。构建时在项目根目录执行：
+使用 Arduino CLI 1.5.1 和 `esp32:esp32@3.3.11`；仓库中的 `firmware/libraries/` 包含本项目需要的本地库及显示驱动补丁。因集成离线中文 MultiNet7 语音模型（`srmodels.bin` 烧录至 `0xC10000`），项目目录已附带自定义 [partitions.csv](firmware/FlipPomodoroTimer/partitions.csv)（`app0` 为 5MB，`model` 为 3.9MB），且工具链需使用带中文 MultiNet7 支持的 `esp32s3-libs`（`libespressif__esp-sr.a`、`libmultinet.a` 与中文 `srmodels.bin`）。构建时在项目根目录执行：
 
 ```bash
-arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi,LoopCore=1,EventsCore=1,EraseFlash=none --libraries "firmware/libraries" "firmware/FlipPomodoroTimer"
+arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=esp_sr_16,PSRAM=opi,LoopCore=1,EventsCore=1,EraseFlash=none --build-property upload.maximum_size=5242880 --libraries "firmware/libraries" --output-dir "firmware/FlipPomodoroTimer/build/esp32.esp32.esp32s3" "firmware/FlipPomodoroTimer"
 ```
 
-连接开发板 `USB TO UART` 口，将下方 `COM3` 替换为实际串口：
+烧录前确保 `srmodels.bin` 位于输出目录 `firmware/FlipPomodoroTimer/build/esp32.esp32.esp32s3/srmodels.bin`，连接开发板 `USB TO UART` 口并将下方 `COM3` 替换为实际串口：
 
 ```bash
-arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32s3:CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi,LoopCore=1,EventsCore=1,EraseFlash=none "firmware/FlipPomodoroTimer"
+arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32s3:CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=esp_sr_16,PSRAM=opi,LoopCore=1,EventsCore=1,EraseFlash=none --input-dir "firmware/FlipPomodoroTimer/build/esp32.esp32.esp32s3" "firmware/FlipPomodoroTimer"
 ```
 
 需要联网校时时，将 `firmware/FlipPomodoroTimer/WiFiConfig.example.h` 复制为同目录 `WiFiConfig.local.h` 并填写配置；该文件已被 Git 忽略。**公开分享固件前应在没有私人配置的环境构建**。未配置 Wi-Fi 时可离线运行，RTC 需要已有有效时间。调试串口波特率为 115200。
