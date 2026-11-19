@@ -675,14 +675,21 @@ void drawPixGlyph(int x, int y, char ch, int scale, uint16_t color, uint8_t alph
 }
 
 void drawPixText(int x, int y, const char *str, int scale, uint16_t color, uint16_t shadowCol,
-                 uint8_t shadowAlpha, uint8_t colonAlpha = 255) {
+                 uint8_t shadowAlpha, uint8_t colonAlpha = 255, bool outline = false) {
   int curX = x;
   for (size_t i = 0; str[i]; ++i) {
     char ch = str[i];
     int cw = (ch == ':') ? (4 * scale) : (6 * scale);
     int gx = (ch == ':') ? (curX - scale) : curX;
     uint8_t fgAlpha = (ch == ':') ? colonAlpha : 255;
-    if (shadowAlpha > 0) {
+    if (outline) {
+      uint8_t oa = static_cast<uint8_t>((static_cast<uint16_t>(shadowAlpha) * fgAlpha) / 255U);
+      drawPixGlyph(gx - 1, y,     ch, scale, shadowCol, oa);
+      drawPixGlyph(gx + 1, y,     ch, scale, shadowCol, oa);
+      drawPixGlyph(gx,     y - 1, ch, scale, shadowCol, oa);
+      drawPixGlyph(gx,     y + 1, ch, scale, shadowCol, oa);
+      drawPixGlyph(gx + 1, y + 1, ch, scale, shadowCol, oa);
+    } else if (shadowAlpha > 0) {
       drawPixGlyph(gx + 1, y + 1, ch, scale, shadowCol,
                    static_cast<uint8_t>((static_cast<uint16_t>(shadowAlpha) * fgAlpha) / 255U));
     }
@@ -821,34 +828,6 @@ bool DisplayUI::clockNeedsAnimTick(const IMUSensor &imu, const RTCManager &rtc, 
   bool meteorActive = (meteorStartMs != 0);
   bool happyActive = (now < petHappyUntilMs);
 
-  // 像素小猫毛线球物理更新（倾斜超过死区时驱动，带惯性阻尼）
-  bool yarnMoving = false;
-  if (cTheme == CLOCK_STYLE_PIXEL_CAT) {
-    float tiltX = 0.0f;
-    if (imu.isReady) {
-      switch (currentRotation) {
-        case 0: tiltX =  imu.ax; break;
-        case 1: tiltX =  imu.ay; break;
-        case 2: tiltX = -imu.ax; break;
-        case 3: tiltX = -imu.ay; break;
-      }
-    }
-    if (fabsf(tiltX) < 0.14f) tiltX = 0.0f;
-    if (lastYarnUpdateMs == 0) lastYarnUpdateMs = now;
-    unsigned long dtMs = now - lastYarnUpdateMs;
-    if (dtMs >= 45) {
-      float dt = min(0.12f, dtMs / 1000.0f);
-      lastYarnUpdateMs = now;
-      yarnVx += tiltX * 48.0f * dt;
-      yarnVx *= 0.86f;
-      if (fabsf(yarnVx) < 0.08f && tiltX == 0.0f) yarnVx = 0.0f;
-      yarnX += yarnVx * dt * 12.0f;
-      if (yarnX < 20.0f) { yarnX = 20.0f; yarnVx = -yarnVx * 0.45f; }
-      if (yarnX > 56.0f) { yarnX = 56.0f; yarnVx = -yarnVx * 0.45f; }
-    }
-    yarnMoving = (fabsf(yarnVx) > 0.12f || fabsf(tiltX) > 0.14f);
-  }
-
   // 极简天象：检测设备倾斜以提供丝滑的陀螺仪视差反馈
   bool skyTilting = false;
   if (cTheme == CLOCK_STYLE_SKY && imu.isReady) {
@@ -863,7 +842,7 @@ bool DisplayUI::clockNeedsAnimTick(const IMUSensor &imu, const RTCManager &rtc, 
   }
 
   // 自适应节能帧率：活跃动效/演示模式/倾斜视差 ~18fps (55ms)，静止小猫 ~2fps (500ms)，静止极简天象 1fps (走秒触发)
-  bool highFps = clockDemoMode || hourlyChimeActive || happyActive || yarnMoving || skyTilting ||
+  bool highFps = clockDemoMode || hourlyChimeActive || happyActive || skyTilting ||
                  (cTheme == CLOCK_STYLE_SKY && meteorActive);
   unsigned long interval = highFps ? 55UL : (cTheme == CLOCK_STYLE_PIXEL_CAT ? 500UL : 1000UL);
   if (now - lastClockAnimMs >= interval) {
@@ -1058,26 +1037,26 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     bool lampOn = false;
 
     if (period == CAT_MORNING) {
-      skyTop = {92, 145, 220}; skyBot = {255, 184, 128};
+      skyTop = {68, 118, 192}; skyBot = {228, 152, 102};
       wallC = {56, 48, 60}; wallHi = {68, 58, 72}; beamC = {74, 52, 42};
       floorC = {92, 64, 48}; floorSeam = {72, 48, 36};
       deskC = {144, 98, 66}; deskDark = {102, 68, 44};
       curtainC = {188, 128, 108}; curtainSh = {142, 92, 78};
-      timeCol = rgb565(255, 248, 236); secCol = rgb565(255, 212, 142); accentCol = rgb565(255, 194, 108);
+      timeCol = rgb565(255, 250, 240); secCol = rgb565(255, 218, 152); accentCol = rgb565(255, 194, 108);
     } else if (period == CAT_WORK) {
-      skyTop = {52, 138, 224}; skyBot = {142, 206, 248};
+      skyTop = {32, 96, 178}; skyBot = {76, 152, 214};
       wallC = {48, 56, 72}; wallHi = {58, 68, 86}; beamC = {68, 52, 40};
       floorC = {86, 62, 46}; floorSeam = {68, 48, 36};
       deskC = {146, 104, 68}; deskDark = {104, 70, 46};
       curtainC = {112, 152, 188}; curtainSh = {82, 116, 148};
       timeCol = rgb565(255, 255, 255); secCol = rgb565(214, 244, 255); accentCol = rgb565(125, 238, 175);
     } else if (period == CAT_SUNSET) {
-      skyTop = {68, 44, 112}; skyBot = {246, 116, 66};
+      skyTop = {56, 36, 98}; skyBot = {216, 96, 56};
       wallC = {52, 36, 48}; wallHi = {64, 44, 58}; beamC = {58, 38, 36};
       floorC = {72, 48, 42}; floorSeam = {54, 34, 30};
       deskC = {124, 80, 56}; deskDark = {86, 54, 38};
       curtainC = {148, 92, 108}; curtainSh = {108, 64, 78};
-      timeCol = rgb565(255, 238, 220); secCol = rgb565(255, 182, 128); accentCol = rgb565(255, 168, 112);
+      timeCol = rgb565(255, 240, 224); secCol = rgb565(255, 188, 136); accentCol = rgb565(255, 168, 112);
       lampOn = true;
     } else {
       skyTop = {10, 16, 38}; skyBot = {24, 36, 74};
@@ -1085,7 +1064,7 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
       floorC = {38, 30, 34}; floorSeam = {26, 20, 24};
       deskC = {66, 50, 44}; deskDark = {44, 34, 30};
       curtainC = {52, 62, 92}; curtainSh = {36, 44, 68};
-      timeCol = rgb565(212, 226, 252); secCol = rgb565(142, 178, 236); accentCol = rgb565(142, 178, 236);
+      timeCol = rgb565(218, 232, 255); secCol = rgb565(152, 188, 244); accentCol = rgb565(142, 178, 236);
       lampOn = true;
     }
     if (happy) accentCol = rgb565(255, 130, 165);
@@ -1121,32 +1100,30 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
 
     int cloudDrift = static_cast<int>((now / 2600UL) % 16UL) - 6;
     if (period == CAT_MORNING) {
-      sCircle(94, 58, 9.5f, rgb565(255, 230, 125));
-      sCloud(28 + cloudDrift / 2, 27, rgb565(255, 234, 218), wx0, wx1);
-      sCloud(68 - cloudDrift / 3, 24, rgb565(255, 224, 206), wx0, wx1);
+      sCircle(98, 57, 7.5f, rgb565(255, 230, 125));
+      sCloud(24 + cloudDrift / 2, 54, rgb565(255, 228, 212), wx0, wx1);
     } else if (period == CAT_WORK) {
-      sCircle(98, 25, 7.0f, rgb565(255, 246, 185));
-      sCloud(28 + cloudDrift / 2, 26, rgb565(250, 253, 255), wx0, wx1);
-      sCloud(66 - cloudDrift / 3, 23, rgb565(242, 248, 255), wx0, wx1);
-      sCloud(88 + cloudDrift / 4, 34, rgb565(235, 244, 255), wx0, wx1);
+      // 太阳与白云避开中央时间数字区域，让文字极清晰
+      sCircle(100, 23, 5.2f, rgb565(255, 244, 175));
+      sCloud(28 + cloudDrift / 2, 54, rgb565(235, 246, 255), wx0, wx1);
+      sCloud(92 - cloudDrift / 3, 50, rgb565(225, 240, 255), wx0, wx1);
     } else if (period == CAT_SUNSET) {
-      sCircle(84, 58, 10.0f, rgb565(255, 202, 92));
+      sCircle(92, 57, 8.0f, rgb565(255, 202, 92));
       for (int x = wx0; x < wx1; ++x) {
-        int mh = static_cast<int>(6.0f + 4.5f * sinf((x - wx0) * 0.11f) + 2.0f * cosf((x - wx0) * 0.25f));
+        int mh = static_cast<int>(5.0f + 3.8f * sinf((x - wx0) * 0.11f) + 1.8f * cosf((x - wx0) * 0.25f));
         for (int y = wy1 - mh; y < wy1; ++y) spx(x, y, rgb565(56, 32, 58));
       }
-      int birdX = 24 + ((now / 1200) % 2);
-      spx(birdX - 1, 25, rgb565(45, 25, 40)); spx(birdX, 26, rgb565(45, 25, 40)); spx(birdX + 1, 25, rgb565(45, 25, 40));
-      spx(birdX + 5, 28, rgb565(45, 25, 40)); spx(birdX + 6, 29, rgb565(45, 25, 40)); spx(birdX + 7, 28, rgb565(45, 25, 40));
+      int birdX = 20 + ((now / 1200) % 2);
+      spx(birdX - 1, 22, rgb565(45, 25, 40)); spx(birdX, 23, rgb565(45, 25, 40)); spx(birdX + 1, 22, rgb565(45, 25, 40));
     } else {
-      // 深夜大弯月 + 呼吸繁星 + 窗外流星
-      sCircle(24, 26, 5.2f, rgb565(250, 236, 168));
+      // 深夜弯月 + 呼吸繁星 + 窗外流星
+      sCircle(22, 24, 4.8f, rgb565(250, 236, 168));
       RGB midSky = lerpRgb(skyTop, skyBot, 0.20f);
-      sCircle(26.5f, 24.5f, 4.5f, rgb565(midSky.r, midSky.g, midSky.b));
+      sCircle(24.5f, 22.5f, 4.2f, rgb565(midSky.r, midSky.g, midSky.b));
       const uint8_t sPts[][2] = {
-        {38,22},{54,20},{72,24},{88,21},{102,26},{44,32},{96,36},{20,42},{104,48},{64,50}
+        {38,21},{54,19},{72,22},{88,20},{102,24},{20,48},{102,48},{64,53}
       };
-      for (int i = 0; i < 10; ++i) {
+      for (int i = 0; i < 8; ++i) {
         bool dim = ((now / 900 + i) % 3 == 0);
         spx(sPts[i][0], sPts[i][1], dim ? rgb565(120, 148, 205) : rgb565(255, 250, 222));
       }
@@ -1154,7 +1131,7 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
         float p = static_cast<float>(now - meteorStartMs) / 1300.0f;
         if (p >= 0.0f && p <= 1.0f) {
           int mx = 98 - static_cast<int>(p * 52.0f);
-          int my = 22 + static_cast<int>(p * 24.0f);
+          int my = 20 + static_cast<int>(p * 16.0f);
           for (int k = 0; k < 7; ++k) {
             int px = mx + k, py = my - k / 2;
             if (px >= wx0 && px < wx1 && py >= wy0 && py < wy1) {
@@ -1174,11 +1151,9 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
           spxBlend(x, y, kGold, glowA);
     }
 
-    // 3. 落地窗细木格窗棂 + 两侧温馨窗帘 + 宽大木质窗台
+    // 3. 通透无遮挡全景落地窗 + 两侧温馨窗帘 + 宽大木质窗台
     uint16_t frameC = (period == CAT_SLEEP) ? rgb565(64, 58, 76) : rgb565(156, 118, 84);
     uint16_t frameHi = (period == CAT_SLEEP) ? rgb565(82, 74, 96) : rgb565(186, 146, 106);
-    sRect(32, wy0, 33, wy1, frameC);
-    sRect(88, wy0, 89, wy1, frameC);
     uint16_t cur565 = rgb565(curtainC.r, curtainC.g, curtainC.b);
     uint16_t curSh565 = rgb565(curtainSh.r, curtainSh.g, curtainSh.b);
     for (int y = wy0; y < wy1; ++y) {
@@ -1195,17 +1170,17 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     sRect(wx0 - 3, wy1, wx1 + 3, wy1 + 2, frameHi);
     sRect(wx0 - 3, wy1 + 2, wx1 + 3, wy1 + 3, frameC);
 
-    // 4. 在全景窗景中央直接绘制圆润粗体像素时间 (2x 逻辑放大 -> 12x16 逻辑像素/字)
+    // 4. 在全景窗景中央绘制带深色全描边的圆润粗体像素时间（任何天色下都无比清晰）
     char hmStr[8];
     if (effectiveTimeValid) snprintf(hmStr, sizeof(hmStr), "%02u:%02u", hour, minute);
     else strcpy(hmStr, "--:--");
     uint8_t colonA = clockDemoMode ? 255 : ((second % 2 == 0) ? 255 : 145);
-    uint16_t shadow565 = (period == CAT_SLEEP) ? rgb565(8, 10, 22) : rgb565(22, 34, 56);
+    uint16_t shadow565 = rgb565(12, 20, 38);
     if (effectiveTimeValid) {
-      drawPixText(23, 27, hmStr, 2, timeCol, shadow565, 130, colonA);
+      drawPixText(23, 27, hmStr, 2, timeCol, shadow565, 220, colonA, true);
       char secStr[4];
       snprintf(secStr, sizeof(secStr), "%02u", second);
-      drawPixText(92, 29, secStr, 1, secCol, shadow565, 110);
+      drawPixText(92, 29, secStr, 1, secCol, shadow565, 200, 255, true);
     } else {
       sRect(36, 36, 48, 38, timeCol); sRect(52, 36, 64, 38, timeCol);
     }
@@ -1241,7 +1216,7 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
       spx(19, 57, rgb565(255, 95, 85));
     }
 
-    // 7. 地板编织小地毯 (x: 18..58, y: 103..114) 与粉色毛线球
+    // 7. 地板编织小地毯 (x: 18..58, y: 103..114)
     uint16_t rugBase = (period == CAT_SLEEP) ? rgb565(68, 62, 74) : rgb565(198, 178, 146);
     uint16_t rugStripe = (period == CAT_SLEEP) ? rgb565(84, 76, 90) : rgb565(222, 198, 162);
     uint16_t rugTrim = (period == CAT_SLEEP) ? rgb565(104, 86, 86) : rgb565(212, 118, 108);
@@ -1250,19 +1225,10 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     sRect(23, 106, 53, 111, rugBase);
     for (int y = 104; y < 113; y += 2) { spx(18, y, rugTrim); spx(57, y, rugTrim); }
 
-    int yBallX = static_cast<int>(lroundf(yarnX));
-    if (period != CAT_SLEEP || happy) {
-      sCircle(static_cast<float>(yBallX), 107.0f, 3.2f, rgb565(235, 105, 130), true, rgb565(135, 45, 65));
-      int tailDir = (yarnVx >= 0.0f) ? -1 : 1;
-      spx(yBallX + tailDir * 3, 109, rgb565(235, 105, 130));
-      spx(yBallX + tailDir * 4, 110, rgb565(235, 105, 130));
-      spx(yBallX + tailDir * 5, 110, rgb565(235, 105, 130));
-    }
-
     // 8. 书桌 / 小夜灯猫窝 & 橘白小猫主角
     bool blink = ((now % 4800UL) < 170UL);
     int tailSwing = ((now / 900UL) % 2 == 0) ? 0 : 1;
-    int eyeShift = (yBallX < 30) ? -1 : ((yBallX > 46) ? 1 : 0);
+    int eyeShift = 0;
 
     if (period == CAT_SLEEP && !happy && !chimeActive) {
       sRect(50, 96, 58, 108, rgb565(68, 48, 38));
@@ -1319,31 +1285,28 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
       drawPixelCatSprite(84, 81, period, happy, chimeActive, blink, tailSwing, eyeShift, now);
     }
 
-    // 9. 在窗景下沿右侧点缀迷你小番茄图标 + 今日专注颗数，居中配日期
-    drawMiniTomatoIcon(76, 59);
-    char cntBuf[8];
-    snprintf(cntBuf, sizeof(cntBuf), "%u", todayCnt);
-    drawPixText(83, 58, cntBuf, 1, accentCol, shadow565, 100);
-
     blitPixelScene4x(fb);
 
-    // 清晰中文日期叠加在窗景下沿左侧（刚好与右侧小番茄图标对称！）
+    // 清晰居中中文日期叠加在窗景下沿（带微投影，去掉了番茄计数更清爽）
     char dateChip[32];
     if (rtc.timeValid) {
-      const char *weekdays[] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
+      const char *weekdays[] = {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"};
       uint8_t wk = rtc.currentDateTime.getWeek();
-      snprintf(dateChip, sizeof(dateChip), "%02u-%02u %s",
+      snprintf(dateChip, sizeof(dateChip), "%02u月%02u日 %s",
                rtc.currentDateTime.getMonth(), rtc.currentDateTime.getDay(),
                wk < 7 ? weekdays[wk] : "");
     } else {
       strcpy(dateChip, "等待校时");
     }
     gfx->setTextSize(1);
+    int16_t tx, ty; uint16_t tw, th;
+    gfx->getTextBounds(dateChip, 0, 246, &tx, &ty, &tw, &th);
+    int cx = 240 - static_cast<int>(tw) / 2 - tx;
     gfx->setTextColor(shadow565);
-    gfx->setCursor(150, 250);
+    gfx->setCursor(cx + 1, 247);
     gfx->print(dateChip);
     gfx->setTextColor(timeCol);
-    gfx->setCursor(148, 248);
+    gfx->setCursor(cx, 246);
     gfx->print(dateChip);
   }
 
