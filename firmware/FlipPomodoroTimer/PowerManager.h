@@ -23,9 +23,9 @@ public:
   bool lowPowerCpu = false;
 
   bool init(TwoWire &wire = Wire) {
-    // 使用 LEDC PWM 驱动背光引脚 (GPIO 4)，5kHz 8-bit
+    // 使用 LEDC PWM 驱动背光引脚 (GPIO 4)，20kHz 8-bit（消除低频背光闪烁与拍频）
     // 硬件物理特性：GPIO 4 经反相晶体管 Q8 接入升压芯片反馈回路，LOW 点亮、HIGH 熄灭。
-    ledcAttach(BOARD_LCD_BACKLIGHT, 5000, 8);
+    ledcAttach(BOARD_LCD_BACKLIGHT, 20000, 8);
     setBacklight(userBrightness);
 
     I2CLock lock;

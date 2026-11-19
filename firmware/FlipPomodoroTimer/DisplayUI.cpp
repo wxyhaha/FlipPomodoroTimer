@@ -96,7 +96,7 @@ bool DisplayUI::init() {
       BOARD_LCD_R0, BOARD_LCD_R1, BOARD_LCD_R2, BOARD_LCD_R3, BOARD_LCD_R4,
       BOARD_LCD_G0, BOARD_LCD_G1, BOARD_LCD_G2, BOARD_LCD_G3, BOARD_LCD_G4, BOARD_LCD_G5,
       BOARD_LCD_B0, BOARD_LCD_B1, BOARD_LCD_B2, BOARD_LCD_B3, BOARD_LCD_B4,
-      1, 40, 48, 40, 1, 1, 31, 13, 1, 12000000L, false, 0, 0, 480 * 20);
+      1, 40, 48, 40, 1, 1, 31, 13, 1, 16000000L, false, 0, 0, 480 * 20);
   panel->enableDoubleBuffer();
   display = new FlipTimerRGBDisplay(
       BOARD_LCD_WIDTH, BOARD_LCD_HEIGHT, panel, 0, false,
