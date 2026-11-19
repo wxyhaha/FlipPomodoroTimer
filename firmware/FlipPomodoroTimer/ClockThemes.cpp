@@ -1014,10 +1014,9 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     int width = digitTextWidth(timeBuf, 70);
     int secondsWidth = digitTextWidth("00", 23);
     int left = (480 - width - 12 - secondsWidth) / 2;
-    uint8_t colonA = clockDemoMode ? 255 : ((second % 2 == 0) ? 255 : 155);
     if (effectiveTimeValid) {
-      drawAlphaDigitsOnFb(fb, timeBuf, left + 3, 168, 70, 116, kBlack, 65, colonA);
-      drawAlphaDigitsOnFb(fb, timeBuf, left, 165, 70, 116, kWhite, 255, colonA);
+      drawAlphaDigitsOnFb(fb, timeBuf, left + 3, 168, 70, 116, kBlack, 65, 255);
+      drawAlphaDigitsOnFb(fb, timeBuf, left, 165, 70, 116, kWhite, 255, 255);
       snprintf(timeBuf, sizeof(timeBuf), "%02u", second);
       drawAlphaDigitsOnFb(fb, timeBuf, left + width + 14, 167, 23, 39, kBlack, 60);
       drawAlphaDigitsOnFb(fb, timeBuf, left + width + 12, 165, 23, 39, kIce, 255);
@@ -1151,16 +1150,25 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
           spxBlend(x, y, kGold, glowA);
     }
 
-    // 3. 通透无遮挡全景落地窗 + 两侧温馨窗帘 + 宽大木质窗台
+    // 3. 通透无遮挡全景落地窗 + 两侧弧形束起窗帘（带小绑带）+ 宽大木质窗台
     uint16_t frameC = (period == CAT_SLEEP) ? rgb565(64, 58, 76) : rgb565(156, 118, 84);
     uint16_t frameHi = (period == CAT_SLEEP) ? rgb565(82, 74, 96) : rgb565(186, 146, 106);
     uint16_t cur565 = rgb565(curtainC.r, curtainC.g, curtainC.b);
     uint16_t curSh565 = rgb565(curtainSh.r, curtainSh.g, curtainSh.b);
+    uint16_t tieCol = (period == CAT_SLEEP) ? rgb565(145, 130, 105) : rgb565(242, 208, 128);
     for (int y = wy0; y < wy1; ++y) {
-      int cw = (y < wy0 + 18) ? 6 : ((y < wy0 + 34) ? 5 : 4);
+      int rel = y - wy0;
+      // 束腰弧度：顶部宽 7px -> 中段 26px 处束紧为 3px -> 下摆微散至 5px
+      int cw = 5;
+      if (rel < 26) cw = 7 - (rel * 4) / 26;
+      else cw = 3 + ((rel - 26) * 2) / 23;
       for (int dx = 0; dx < cw; ++dx) {
         spx(wx0 + dx, y, (dx % 2 == 0) ? cur565 : curSh565);
         spx(wx1 - 1 - dx, y, (dx % 2 == 0) ? cur565 : curSh565);
+      }
+      if (rel == 26) {
+        sRect(wx0, y, wx0 + cw, y + 1, tieCol);
+        sRect(wx1 - cw, y, wx1, y + 1, tieCol);
       }
     }
     uint16_t borderC = chimeActive ? kGold : frameC;
@@ -1174,10 +1182,9 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     char hmStr[8];
     if (effectiveTimeValid) snprintf(hmStr, sizeof(hmStr), "%02u:%02u", hour, minute);
     else strcpy(hmStr, "--:--");
-    uint8_t colonA = clockDemoMode ? 255 : ((second % 2 == 0) ? 255 : 145);
     uint16_t shadow565 = rgb565(12, 20, 38);
     if (effectiveTimeValid) {
-      drawPixText(23, 27, hmStr, 2, timeCol, shadow565, 220, colonA, true);
+      drawPixText(23, 27, hmStr, 2, timeCol, shadow565, 220, 255, true);
       char secStr[4];
       snprintf(secStr, sizeof(secStr), "%02u", second);
       drawPixText(92, 29, secStr, 1, secCol, shadow565, 200, 255, true);
@@ -1216,14 +1223,30 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
       spx(19, 57, rgb565(255, 95, 85));
     }
 
-    // 7. 地板编织小地毯 (x: 18..58, y: 103..114)
-    uint16_t rugBase = (period == CAT_SLEEP) ? rgb565(68, 62, 74) : rgb565(198, 178, 146);
-    uint16_t rugStripe = (period == CAT_SLEEP) ? rgb565(84, 76, 90) : rgb565(222, 198, 162);
+    // 7. 地板复古菱形暗纹编织小地毯 (x: 17..51, y: 103..113) + 旁侧小猫陶瓷水碗
+    uint16_t rugBase = (period == CAT_SLEEP) ? rgb565(64, 58, 70) : rgb565(192, 170, 138);
+    uint16_t rugInner = (period == CAT_SLEEP) ? rgb565(78, 70, 86) : rgb565(214, 190, 154);
+    uint16_t rugPattern = (period == CAT_SLEEP) ? rgb565(94, 82, 98) : rgb565(172, 126, 104);
     uint16_t rugTrim = (period == CAT_SLEEP) ? rgb565(104, 86, 86) : rgb565(212, 118, 108);
-    sRect(19, 104, 57, 113, rugBase);
-    sRect(21, 105, 55, 112, rugStripe);
-    sRect(23, 106, 53, 111, rugBase);
-    for (int y = 104; y < 113; y += 2) { spx(18, y, rugTrim); spx(57, y, rugTrim); }
+    sRect(18, 104, 50, 113, rugBase);
+    sRect(20, 105, 48, 112, rugInner);
+    for (int y = 104; y < 113; y += 2) { spx(17, y, rugTrim); spx(50, y, rugTrim); }
+    // 编织几何小菱形花纹
+    for (int cx : {26, 34, 42}) {
+      spx(cx, 106, rugPattern); spx(cx, 110, rugPattern);
+      spx(cx - 1, 107, rugPattern); spx(cx + 1, 107, rugPattern);
+      spx(cx - 2, 108, rugPattern); spx(cx + 2, 108, rugPattern);
+      spx(cx - 1, 109, rugPattern); spx(cx + 1, 109, rugPattern);
+    }
+
+    // 地面小猫水碗 (x: 54..61, y: 102..106)
+    uint16_t bowlBody = (period == CAT_SLEEP) ? rgb565(118, 124, 138) : rgb565(232, 232, 226);
+    uint16_t bowlRim = (period == CAT_SLEEP) ? rgb565(90, 96, 112) : rgb565(196, 196, 190);
+    uint16_t waterCol = (period == CAT_SLEEP) ? rgb565(56, 88, 128) : rgb565(108, 192, 240);
+    sRect(54, 103, 62, 106, bowlBody);
+    sRect(55, 106, 61, 107, bowlRim);
+    sRect(55, 102, 61, 104, bowlRim);
+    sRect(56, 102, 60, 103, waterCol);
 
     // 8. 书桌 / 小夜灯猫窝 & 橘白小猫主角
     bool blink = ((now % 4800UL) < 170UL);
@@ -1303,8 +1326,10 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     gfx->getTextBounds(dateChip, 0, 246, &tx, &ty, &tw, &th);
     int cx = 240 - static_cast<int>(tw) / 2 - tx;
     gfx->setTextColor(shadow565);
-    gfx->setCursor(cx + 1, 247);
-    gfx->print(dateChip);
+    gfx->setCursor(cx - 1, 246); gfx->print(dateChip);
+    gfx->setCursor(cx + 1, 246); gfx->print(dateChip);
+    gfx->setCursor(cx, 245); gfx->print(dateChip);
+    gfx->setCursor(cx, 247); gfx->print(dateChip);
     gfx->setTextColor(timeCol);
     gfx->setCursor(cx, 246);
     gfx->print(dateChip);
@@ -1314,7 +1339,7 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
   drawHeader(power, rtc);
   if (clockDemoMode) {
     centeredText("24H 昼夜演示中 · 点击时间退出",
-                 cTheme == CLOCK_STYLE_SKY ? 132 : 454, 1, kGold);
+                 cTheme == CLOCK_STYLE_SKY ? 132 : 60, 1, kGold);
   }
   gfx->fillCircle(36, 444, 22, 0x0125);
   gfx->drawCircle(36, 444, 22, kCyan);
