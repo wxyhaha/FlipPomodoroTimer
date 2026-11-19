@@ -33,6 +33,9 @@ const char PORTAL_HTML[] PROGMEM = R"rawliteral(
   .btn-s{background:#233040;color:#fff;}
   .btn-d{background:#3a1e24;color:#ff8a93;}
   .msg{font-size:13px;color:var(--gold);margin-top:8px;text-align:center;min-height:18px;}
+  .sch-row{display:grid;grid-template-columns:76px 76px 66px 1fr 36px;gap:6px;align-items:center;margin-bottom:6px;}
+  .sch-row input,.sch-row select{padding:6px;font-size:12px;}
+  .sch-del{padding:6px 0;margin:0;background:#3a1e24;color:#ff8a93;border:none;border-radius:6px;cursor:pointer;font-weight:700;}
 </style>
 </head>
 <body>
@@ -93,6 +96,11 @@ const char PORTAL_HTML[] PROGMEM = R"rawliteral(
       <span style="font-size:13px;">时钟页整点报时 (22:00-07:00 免打扰)</span>
       <input type="checkbox" id="hchm" name="hchm" style="width:18px;height:18px;">
     </div>
+    <label>计时工作模式</label>
+    <select id="schm" name="schm">
+      <option value="0">自由翻转番茄钟</option>
+      <option value="1">每日日程模式 (按时间表提醒)</option>
+    </select>
     <label>提示音音量: <span id="volVal">75</span> (0=静音)</label>
     <input type="range" id="vol" name="vol" min="0" max="85" oninput="volVal.innerText=this.value">
     <label>屏幕亮度: <span id="briVal">255</span></label>
@@ -101,6 +109,17 @@ const char PORTAL_HTML[] PROGMEM = R"rawliteral(
     <button class="btn btn-p" type="submit">保存配置并立即生效</button>
     <div class="msg" id="msg"></div>
   </form>
+
+  <div class="card">
+    <h2>每日日程表 (最多 32 条 · 无 0 分钟条目)</h2>
+    <div id="schList"></div>
+    <div class="grid" style="margin-top:8px;">
+      <button class="btn btn-s" type="button" style="margin-top:0;" onclick="addSchRow()">+ 添加日程</button>
+      <button class="btn btn-p" type="button" style="margin-top:0;" onclick="saveSchedule()">保存日程表</button>
+    </div>
+    <button class="btn btn-d" type="button" onclick="if(confirm('确定恢复为默认 26 条每日日程吗？')) resetSchedule()">恢复默认日程表</button>
+    <div class="msg" id="schMsg"></div>
+  </div>
 
   <div class="card">
     <button class="btn btn-s" type="button" onclick="postAct('/api/sync','正在关闭热点并后台校时...')">关闭热点并同步 NTP 时间</button>
@@ -114,7 +133,7 @@ async function loadData(){
   ssid.value=d.ssid||''; pass.value=d.pass||''; tz.value=d.tz;
   f1.value=d.f1; f2.value=d.f2; f3.value=d.f3; f4.value=d.f4;
   brk.value=d.brk; aoff.value=d.aoff; abrk.checked=!!d.abrk; thm.value=d.thm||0;
-  cthm.value=d.cthm||0; hchm.checked=(d.hchm!==0);
+  cthm.value=d.cthm||0; hchm.checked=(d.hchm!==0); schm.value=d.schm?1:0;
   vol.value=d.vol; volVal.innerText=d.vol;
   bri.value=d.bri; briVal.innerText=d.bri;
   todayCnt.innerText=d.todayCnt; todayMin.innerText=d.todayMin;
@@ -140,17 +159,71 @@ async function postAct(url, tip){
   msg.innerText = tip;
   if(url==='/api/stats/reset') loadData();
 }
+function minToHHMM(m){
+  const h=Math.floor(m/60), mm=m%60;
+  return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+}
+function hhmmToMin(s){
+  const p=s.split(':'); if(p.length!==2) return -1;
+  const h=parseInt(p[0],10), m=parseInt(p[1],10);
+  if(isNaN(h)||isNaN(m)||h<0||h>24||m<0||m>59) return -1;
+  return h*60+m;
+}
+let schItems=[];
+function renderSchedule(){
+  schList.innerHTML = schItems.map((it,idx)=>`
+    <div class="sch-row">
+      <input type="text" value="${minToHHMM(it.s)}" onchange="schItems[${idx}].s=hhmmToMin(this.value)">
+      <input type="text" value="${minToHHMM(it.e)}" onchange="schItems[${idx}].e=hhmmToMin(this.value)">
+      <select onchange="schItems[${idx}].c=parseInt(this.value,10)">
+        <option value="0" ${it.c===0?'selected':''}>专注</option>
+        <option value="1" ${it.c===1?'selected':''}>休息</option>
+        <option value="2" ${it.c===2?'selected':''}>生活</option>
+      </select>
+      <input type="text" maxlength="20" value="${it.n.replace(/"/g,'&quot;')}" onchange="schItems[${idx}].n=this.value">
+      <button class="sch-del" type="button" onclick="schItems.splice(${idx},1);renderSchedule()">×</button>
+    </div>`).join('');
+}
+function addSchRow(){
+  if(schItems.length>=32){schMsg.innerText='最多支持 32 条日程';return;}
+  const lastE = schItems.length ? schItems[schItems.length-1].e : 540;
+  const s = Math.min(lastE, 1410), e = Math.min(s+30, 1440);
+  if(e<=s){schMsg.innerText='已到 24:00 无法继续添加';return;}
+  schItems.push({s,e,c:0,n:'新日程'});
+  renderSchedule();
+}
+async function loadSchedule(){
+  const r = await fetch('/api/schedule');
+  const d = await r.json();
+  schItems = d.items || [];
+  renderSchedule();
+}
+async function saveSchedule(){
+  for(const it of schItems){
+    if(it.s<0||it.e<=it.s||it.e>1440){schMsg.innerText='存在无效或 0 分钟时段，请检查 HH:MM 格式';return;}
+  }
+  const lines = schItems.map(it=>`${it.s},${it.e},${it.c},${it.n.replace(/[\r\n]/g,' ').trim()||'日程'}`).join('\n');
+  const r = await fetch('/api/schedule',{method:'POST',body:new URLSearchParams({data:lines})});
+  if(r.ok){schMsg.innerText='日程表已保存并按时间排序！'; loadSchedule();}
+  else schMsg.innerText='保存失败';
+}
+async function resetSchedule(){
+  const r = await fetch('/api/schedule',{method:'POST',body:new URLSearchParams({action:'reset'})});
+  if(r.ok){schMsg.innerText='已恢复默认日程表'; loadSchedule();}
+}
 loadData();
+loadSchedule();
 </script>
 </body>
 </html>
 )rawliteral";
 }
 
-void WebPortalManager::begin(ConfigManager &cfg, StatsManager &st, RTCManager &rtcMgr) {
+void WebPortalManager::begin(ConfigManager &cfg, StatsManager &st, RTCManager &rtcMgr, ScheduleManager &schedMgr) {
   config = &cfg;
   stats = &st;
   rtc = &rtcMgr;
+  schedule = &schedMgr;
 }
 
 void WebPortalManager::start() {
@@ -237,6 +310,8 @@ void WebPortalManager::setupRoutes() {
   server->on("/", HTTP_GET, [this]() { handleRoot(); });
   server->on("/api/data", HTTP_GET, [this]() { handleApiData(); });
   server->on("/api/config", HTTP_POST, [this]() { handleSaveConfig(); });
+  server->on("/api/schedule", HTTP_GET, [this]() { handleGetSchedule(); });
+  server->on("/api/schedule", HTTP_POST, [this]() { handleSaveSchedule(); });
   server->on("/api/sync", HTTP_POST, [this]() { handleSyncNow(); });
   server->on("/api/stats/reset", HTTP_POST, [this]() { handleResetStats(); });
   server->on("/api/close", HTTP_POST, [this]() { handleClosePortal(); });
@@ -275,6 +350,7 @@ void WebPortalManager::handleApiData() {
   json += "\"thm\":" + String(config->data.theme) + ",";
   json += "\"cthm\":" + String(config->data.clockTheme) + ",";
   json += "\"hchm\":" + String(config->data.hourlyChime ? 1 : 0) + ",";
+  json += "\"schm\":" + String(config->data.scheduleMode ? 1 : 0) + ",";
   json += "\"todayCnt\":" + String(tCnt) + ",";
   json += "\"todayMin\":" + String(tMin) + ",";
   json += "\"totCnt\":" + String(stats ? stats->totalPomodoros : 0) + ",";
@@ -321,6 +397,7 @@ void WebPortalManager::handleSaveConfig() {
   if (server->hasArg("thm")) config->data.theme = constrain(server->arg("thm").toInt(), 0, 4);
   if (server->hasArg("cthm")) config->data.clockTheme = constrain(server->arg("cthm").toInt(), 0, 1);
   if (server->hasArg("hchm")) config->data.hourlyChime = (server->arg("hchm") == "1");
+  if (server->hasArg("schm")) config->data.scheduleMode = (server->arg("schm") == "1");
 
   config->save();
   configChanged = true;
@@ -346,4 +423,79 @@ void WebPortalManager::handleClosePortal() {
   server->send(200, "application/json", "{\"ok\":true}");
   delay(150);
   stop();
+}
+
+void WebPortalManager::handleGetSchedule() {
+  lastActivityMs = millis();
+  if (!schedule) {
+    server->send(500, "application/json", "{\"items\":[]}");
+    return;
+  }
+  String json = "{\"items\":[";
+  for (uint8_t i = 0; i < schedule->count; i++) {
+    if (i > 0) json += ",";
+    const ScheduleItem &it = schedule->items[i];
+    String nameEsc = "";
+    for (size_t k = 0; it.name[k] != '\0'; k++) {
+      char c = it.name[k];
+      if (c == '"' || c == '\\') nameEsc += '\\';
+      nameEsc += c;
+    }
+    json += "{\"s\":" + String(it.startMin) + ",\"e\":" + String(it.endMin) +
+            ",\"c\":" + String(it.category) + ",\"n\":\"" + nameEsc + "\"}";
+  }
+  json += "]}";
+  server->send(200, "application/json", json);
+}
+
+void WebPortalManager::handleSaveSchedule() {
+  lastActivityMs = millis();
+  if (!schedule) {
+    server->send(500, "text/plain", "NO_SCHED");
+    return;
+  }
+  if (server->hasArg("action") && server->arg("action") == "reset") {
+    schedule->resetDefaults();
+    scheduleChanged = true;
+    server->send(200, "application/json", "{\"ok\":true}");
+    return;
+  }
+  if (!server->hasArg("data")) {
+    server->send(400, "text/plain", "NO_DATA");
+    return;
+  }
+  String raw = server->arg("data");
+  uint8_t idx = 0;
+  int pos = 0;
+  while (pos < (int)raw.length() && idx < ScheduleManager::MAX_ITEMS) {
+    int nl = raw.indexOf('\n', pos);
+    String line = (nl < 0) ? raw.substring(pos) : raw.substring(pos, nl);
+    pos = (nl < 0) ? raw.length() : (nl + 1);
+    line.trim();
+    if (line.length() == 0) continue;
+
+    int c1 = line.indexOf(',');
+    int c2 = (c1 >= 0) ? line.indexOf(',', c1 + 1) : -1;
+    int c3 = (c2 >= 0) ? line.indexOf(',', c2 + 1) : -1;
+    if (c1 < 0 || c2 < 0 || c3 < 0) continue;
+
+    int s = line.substring(0, c1).toInt();
+    int e = line.substring(c1 + 1, c2).toInt();
+    int cat = line.substring(c2 + 1, c3).toInt();
+    String nm = line.substring(c3 + 1);
+    nm.trim();
+    if (s < 0 || s >= 1440 || e <= s || e > 1440) continue;
+
+    ScheduleItem &it = schedule->items[idx++];
+    it.startMin = static_cast<uint16_t>(s);
+    it.endMin = static_cast<uint16_t>(e);
+    it.category = static_cast<uint8_t>(constrain(cat, 0, 2));
+    if (nm.length() == 0) nm = "日程";
+    strncpy(it.name, nm.c_str(), sizeof(it.name) - 1);
+    it.name[sizeof(it.name) - 1] = '\0';
+  }
+  schedule->count = idx;
+  schedule->save();
+  scheduleChanged = true;
+  server->send(200, "application/json", "{\"ok\":true}");
 }

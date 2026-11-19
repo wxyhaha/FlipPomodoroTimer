@@ -1335,16 +1335,20 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     gfx->print(dateChip);
   }
 
-  // 顶部导航栏、左下角息屏按钮、右下角时钟主题切换按钮（均叠加在天幕/背景之上）
+  // 顶部导航栏、左下角模式切换按钮与右下角时钟主题切换按钮（均叠加在天幕/背景之上）
   drawHeader(power, rtc);
   if (clockDemoMode) {
     centeredText("24H 昼夜演示中 · 点击时间退出",
                  cTheme == CLOCK_STYLE_SKY ? 132 : 60, 1, kGold);
   }
-  gfx->fillCircle(36, 444, 22, 0x0125);
-  gfx->drawCircle(36, 444, 22, kCyan);
-  drawScreenOffIcon(36, 444, kIce);
+  bool sch = config.data.scheduleMode;
+  gfx->fillCircle(36, 444, 22, sch ? 0x0247 : 0x0125);
+  gfx->drawCircle(36, 444, 22, sch ? kGold : kCyan);
+  drawModeSwitchIcon(36, 444, sch, sch ? kGold : kIce);
   drawClockStyleButton(cTheme);
+  if (sch && schedState.popupVisible) {
+    drawSchedulePopup(rtc);
+  }
 
   dirty.full();
   lastClockTheme = cTheme;

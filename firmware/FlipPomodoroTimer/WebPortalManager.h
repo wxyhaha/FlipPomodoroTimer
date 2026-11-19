@@ -6,6 +6,7 @@
 #include "ConfigManager.h"
 #include "StatsManager.h"
 #include "RTCManager.h"
+#include "ScheduleManager.h"
 
 enum PortalMode {
   PORTAL_OFF = 0,
@@ -34,10 +35,15 @@ public:
     syncRequested = false;
     return v;
   }
+  bool consumeScheduleChanged() {
+    bool v = scheduleChanged;
+    scheduleChanged = false;
+    return v;
+  }
   const char *getIpString() const { return ipStr; }
   int getConnectedClients() const { return (mode == PORTAL_AP) ? WiFi.softAPgetStationNum() : 0; }
 
-  void begin(ConfigManager &cfg, StatsManager &st, RTCManager &rtcMgr);
+  void begin(ConfigManager &cfg, StatsManager &st, RTCManager &rtcMgr, ScheduleManager &schedMgr);
   void start();
   void stop();
   void handleClient();
@@ -46,6 +52,7 @@ private:
   ConfigManager *config = nullptr;
   StatsManager *stats = nullptr;
   RTCManager *rtc = nullptr;
+  ScheduleManager *schedule = nullptr;
   WebServer *server = nullptr;
   DNSServer *dns = nullptr;
 
@@ -53,6 +60,7 @@ private:
   char ipStr[24] = "0.0.0.0";
   bool configChanged = false;
   bool syncRequested = false;
+  bool scheduleChanged = false;
   unsigned long connectStartMs = 0;
   unsigned long lastActivityMs = 0;
 
@@ -65,4 +73,6 @@ private:
   void handleSyncNow();
   void handleResetStats();
   void handleClosePortal();
+  void handleGetSchedule();
+  void handleSaveSchedule();
 };

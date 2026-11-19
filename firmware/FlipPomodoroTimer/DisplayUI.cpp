@@ -192,8 +192,19 @@ int DisplayUI::checkBadgeClick(int16_t x, int16_t y) const {
   return -1;
 }
 
-bool DisplayUI::checkScreenOffClick(int16_t x, int16_t y) const {
+bool DisplayUI::checkModeSwitchClick(int16_t x, int16_t y) const {
+  if (currentMode != UI_MODE_POMODORO && currentMode != UI_MODE_CLOCK) return false;
   return y >= 416 && y < 472 && x >= 8 && x < 64;
+}
+
+bool DisplayUI::checkScheduleConfirmClick(int16_t x, int16_t y) const {
+  if ((currentMode != UI_MODE_POMODORO && currentMode != UI_MODE_CLOCK) || !schedState.popupVisible) return false;
+  return x >= 68 && x < 234 && y >= 274 && y < 342;
+}
+
+bool DisplayUI::checkScheduleSkipClick(int16_t x, int16_t y) const {
+  if ((currentMode != UI_MODE_POMODORO && currentMode != UI_MODE_CLOCK) || !schedState.popupVisible) return false;
+  return x >= 246 && x < 412 && y >= 274 && y < 342;
 }
 
 bool DisplayUI::checkPortalButtonClick(int16_t x, int16_t y) const {
@@ -257,10 +268,105 @@ void DisplayUI::drawStatsIcon(int x, int y, int size, uint16_t color) {
   gfx->fillRoundRect(x + size / 2 - 2 - w, base - size / 2, w, size / 2, 1, color);
 }
 
-void DisplayUI::drawScreenOffIcon(int x, int y, uint16_t color) {
-  gfx->drawRoundRect(x - 12, y - 10, 24, 18, 3, color);
-  gfx->drawFastHLine(x - 7, y + 11, 14, color);
-  gfx->drawFastVLine(x, y + 8, 3, color);
+void DisplayUI::drawModeSwitchIcon(int x, int y, bool scheduleMode, uint16_t color) {
+  if (scheduleMode) {
+    // 日程模式图标：日历框 + 三行日程横线
+    gfx->drawRoundRect(x - 10, y - 9, 20, 19, 3, color);
+    gfx->drawFastHLine(x - 10, y - 3, 20, color);
+    gfx->fillRect(x - 6, y - 12, 3, 4, color);
+    gfx->fillRect(x + 3, y - 12, 3, 4, color);
+    gfx->drawFastHLine(x - 6, y + 1, 12, color);
+    gfx->drawFastHLine(x - 6, y + 5, 8, color);
+  } else {
+    // 自由模式图标：小日历轮廓提示可切换日程
+    gfx->drawRoundRect(x - 10, y - 9, 20, 19, 3, color);
+    gfx->drawFastHLine(x - 10, y - 3, 20, color);
+    gfx->fillRect(x - 6, y - 12, 3, 4, color);
+    gfx->fillRect(x + 3, y - 12, 3, 4, color);
+    gfx->fillCircle(x, y + 3, 2, color);
+  }
+}
+
+void DisplayUI::drawScheduleBanner(const ConfigManager &config) {
+  if (!config.data.scheduleMode) return;
+  uint16_t accent = kCyan;
+  const char *cat = "待机";
+  if (schedState.active && !schedState.skipped) {
+    if (schedState.category == 0) {
+      accent = kCyan;
+      cat = "专注";
+    } else if (schedState.category == 1) {
+      accent = kMint;
+      cat = "休息";
+    } else {
+      accent = kGold;
+      cat = "生活";
+    }
+  }
+
+  gfx->fillRoundRect(70, 428, 396, 36, 12, 0x08E3);
+  gfx->drawRoundRect(70, 428, 396, 36, 12, accent);
+
+  char line[80];
+  if (schedState.active && !schedState.skipped) {
+    snprintf(line, sizeof(line), "[%s] %s · %02u:%02u-%02u:%02u",
+             cat, schedState.title,
+             schedState.startMin / 60, schedState.startMin % 60,
+             schedState.endMin / 60, schedState.endMin % 60);
+  } else if (schedState.hasNext) {
+    snprintf(line, sizeof(line), "待机 · 下一项 %02u:%02u %s",
+             schedState.nextStartMin / 60, schedState.nextStartMin % 60,
+             schedState.nextTitle);
+  } else {
+    snprintf(line, sizeof(line), "日程模式 · 今日安排已结束");
+  }
+  centeredTextInBox(line, 268, 452, 1, kWhite);
+  dirty.include(70, 428, 396, 36);
+}
+
+void DisplayUI::drawSchedulePopup(const RTCManager &rtc) {
+  uint16_t accent = kCyan;
+  const char *cat = "专注";
+  if (schedState.category == 1) {
+    accent = kMint;
+    cat = "休息";
+  } else if (schedState.category == 2) {
+    accent = kGold;
+    cat = "生活";
+  }
+
+  // 半透感深色弹窗卡片
+  gfx->fillRoundRect(44, 126, 392, 228, 18, 0x10A3);
+  gfx->drawRoundRect(44, 126, 392, 228, 18, accent);
+  gfx->drawRoundRect(45, 127, 390, 226, 17, accent);
+
+  char header[40];
+  snprintf(header, sizeof(header), "日程到点 · %s  %02u:%02u-%02u:%02u",
+           cat,
+           schedState.startMin / 60, schedState.startMin % 60,
+           schedState.endMin / 60, schedState.endMin % 60);
+  centeredTextInBox(header, 240, 166, 1, accent);
+
+  centeredTextInBox(schedState.title, 240, 214, 2, kWhite);
+
+  int nowMin = rtc.timeValid ? (rtc.getHour() * 60 + rtc.getMinute()) : static_cast<int>(schedState.startMin);
+  int remainMin = static_cast<int>(schedState.endMin) - nowMin;
+  if (remainMin < 1) remainMin = 1;
+  char sub[48];
+  snprintf(sub, sizeof(sub), "按时间表结束 · 剩余约 %d 分钟", remainMin);
+  centeredTextInBox(sub, 240, 250, 1, kIce);
+
+  // 确定按钮 (左)
+  gfx->fillRoundRect(74, 280, 154, 54, 12, 0x1549);
+  gfx->drawRoundRect(74, 280, 154, 54, 12, kMint);
+  centeredTextInBox("确定开始", 151, 314, 1, kWhite);
+
+  // 跳过按钮 (右)
+  gfx->fillRoundRect(252, 280, 154, 54, 12, 0x2126);
+  gfx->drawRoundRect(252, 280, 154, 54, 12, kMuted);
+  centeredTextInBox("跳过本次", 329, 314, 1, kIce);
+
+  dirty.include(44, 126, 392, 228);
 }
 
 void DisplayUI::drawHeader(const PowerManager &power, const RTCManager &rtc) {
@@ -1150,11 +1256,20 @@ void DisplayUI::render(const PomodoroEngine &engine, const IMUSensor &imu,
     }
   }
 
-  if (full) {
-    gfx->fillCircle(36, 444, 22, 0x0125);
-    gfx->drawCircle(36, 444, 22, kCyan);
-    drawScreenOffIcon(36, 444, kIce);
-    dirty.include(8, 416, 56, 56);
+  if (currentMode == UI_MODE_POMODORO) {
+    if (full) {
+      bool sch = config.data.scheduleMode;
+      gfx->fillCircle(36, 444, 22, sch ? 0x0247 : 0x0125);
+      gfx->drawCircle(36, 444, 22, sch ? kGold : kCyan);
+      drawModeSwitchIcon(36, 444, sch, sch ? kGold : kIce);
+      dirty.include(8, 416, 56, 56);
+    }
+    if (config.data.scheduleMode && full) {
+      drawScheduleBanner(config);
+    }
+    if (config.data.scheduleMode && schedState.popupVisible) {
+      drawSchedulePopup(rtc);
+    }
   }
   presenter.present(gfx->getFramebuffer(), currentRotation, dirty);
   lastTheme = theme;
@@ -1195,6 +1310,10 @@ void DisplayUI::update(const PomodoroEngine &e, const IMUSensor &imu, const Powe
     return;
   }
   if (lastTimeValid != r.timeValid) needsRedraw = true;
+  if (lastScheduleMode != c.data.scheduleMode ||
+      memcmp(&schedState, &lastSchedState, sizeof(ScheduleUIState)) != 0) {
+    if (currentMode == UI_MODE_POMODORO || currentMode == UI_MODE_CLOCK) needsRedraw = true;
+  }
   uint32_t second = r.getHour() * 3600UL + r.getMinute() * 60UL + r.getSecond();
   uint32_t date = r.getDateYyyyMmDd();
   unsigned long remaining = e.getRemainingSeconds();
@@ -1273,5 +1392,7 @@ void DisplayUI::update(const PomodoroEngine &e, const IMUSensor &imu, const Powe
   lastPortalMode = w.getMode();
   lastPortalClients = w.getConnectedClients();
   lastTotalPomodoros = s.totalPomodoros;
+  lastScheduleMode = c.data.scheduleMode;
+  lastSchedState = schedState;
   needsRedraw = false;
 }

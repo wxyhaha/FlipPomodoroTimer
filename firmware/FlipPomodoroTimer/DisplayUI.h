@@ -27,6 +27,20 @@ enum ClockPageStyle {
   CLOCK_STYLE_PIXEL_CAT = 1
 };
 
+struct ScheduleUIState {
+  bool active = false;
+  bool popupVisible = false;
+  bool skipped = false;
+  uint8_t category = 0; // 0=专注, 1=休息, 2=生活
+  uint16_t startMin = 0;
+  uint16_t endMin = 0;
+  char title[48] = "";
+  bool hasNext = false;
+  uint16_t nextStartMin = 0;
+  uint16_t nextEndMin = 0;
+  char nextTitle[48] = "";
+};
+
 class DisplayUI {
 public:
   bool isReady = false;
@@ -47,7 +61,10 @@ public:
   Arduino_RGB_Display* getDisplay() const { return display; }
   Arduino_XCA9554SWSPI* getExpander() const { return expander; }
   int checkBadgeClick(int16_t x, int16_t y) const;
-  bool checkScreenOffClick(int16_t x, int16_t y) const;
+  bool checkModeSwitchClick(int16_t x, int16_t y) const;
+  bool checkScheduleConfirmClick(int16_t x, int16_t y) const;
+  bool checkScheduleSkipClick(int16_t x, int16_t y) const;
+  void setScheduleState(const ScheduleUIState &st) { schedState = st; }
   bool checkClockStyleButtonClick(int16_t x, int16_t y) const;
   bool checkClockPetClick(int16_t x, int16_t y, uint8_t clockTheme) const;
   bool checkClockDemoClick(int16_t x, int16_t y) const;
@@ -88,6 +105,9 @@ private:
   uint8_t lastTheme = 0;
   uint8_t lastClockTheme = 0;
   uint8_t lastPixelStage = 255;
+  bool lastScheduleMode = false;
+  ScheduleUIState schedState;
+  ScheduleUIState lastSchedState;
   unsigned long petHappyUntilMs = 0;
   unsigned long hourlyChimeStartMs = 0;
   bool hourlyChimeActive = false;
@@ -133,7 +153,9 @@ private:
   void drawHourglass(int x, int y, int size, uint16_t color);
   void drawClockIcon(int x, int y, int size, uint16_t color);
   void drawStatsIcon(int x, int y, int size, uint16_t color);
-  void drawScreenOffIcon(int x, int y, uint16_t color);
+  void drawModeSwitchIcon(int x, int y, bool scheduleMode, uint16_t color);
+  void drawScheduleBanner(const ConfigManager &config);
+  void drawSchedulePopup(const RTCManager &rtc);
   void drawStatus(TimerState state);
   void prepareRing();
   void drawRing(float remaining, bool paused, bool isBreak, uint8_t pulseScale = 255);

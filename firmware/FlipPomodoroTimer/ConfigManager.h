@@ -16,6 +16,7 @@ struct AppConfig {
   uint8_t theme = 0;                         // 番茄钟表盘主题 (0..4)
   uint8_t clockTheme = 0;                    // 时钟页主题 (0=极简天象, 1=像素小猫)
   bool hourlyChime = true;                   // 整点报时开关（时钟页生效，22:00-07:00自动静默）
+  bool scheduleMode = false;                 // 日程模式开关（false=自由翻转番茄钟，true=每日日程模式）
 };
 
 class ConfigManager {
@@ -52,6 +53,7 @@ public:
     data.theme = constrain(prefs.getUChar("thm", 0), 0, 4);
     data.clockTheme = constrain(prefs.getUChar("cthm", 0), 0, 1);
     data.hourlyChime = prefs.getBool("hchm", true);
+    data.scheduleMode = prefs.getBool("schm", false);
     prefs.end();
   }
 
@@ -73,6 +75,7 @@ public:
     prefs.putUChar("thm", constrain(data.theme, 0, 4));
     prefs.putUChar("cthm", constrain(data.clockTheme, 0, 1));
     prefs.putBool("hchm", data.hourlyChime);
+    prefs.putBool("schm", data.scheduleMode);
     prefs.end();
     return true;
   }

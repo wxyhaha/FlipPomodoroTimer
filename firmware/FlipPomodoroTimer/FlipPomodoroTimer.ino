@@ -10,6 +10,7 @@
 #include "RTCManager.h"
 #include "ConfigManager.h"
 #include "StatsManager.h"
+#include "ScheduleManager.h"
 #include "WebPortalManager.h"
 #include "WiFiConfig.h"
 
@@ -22,7 +23,92 @@ AudioManager audio;
 RTCManager rtc;
 ConfigManager config;
 StatsManager stats;
+ScheduleManager schedule;
 WebPortalManager portal;
+
+int schedActiveIdx = -1;
+uint32_t schedActiveDate = 0;
+bool schedPopupVisible = false;
+bool schedSkipped = false;
+bool schedConfirmed = false;
+uint8_t schedActiveCategory = SCHED_FOCUS;
+unsigned long schedLastRepeatMs = 0;
+uint8_t schedRepeatCount = 0;
+
+void syncScheduleUI() {
+  ScheduleUIState st;
+  if (config.data.scheduleMode && rtc.timeValid) {
+    int nowMin = rtc.getHour() * 60 + rtc.getMinute();
+    if (schedActiveIdx >= 0 && schedActiveIdx < schedule.count) {
+      const ScheduleItem &cur = schedule.items[schedActiveIdx];
+      st.active = true;
+      st.popupVisible = schedPopupVisible;
+      st.skipped = schedSkipped;
+      st.category = cur.category;
+      st.startMin = cur.startMin;
+      st.endMin = cur.endMin;
+      strncpy(st.title, cur.name, sizeof(st.title) - 1);
+      st.title[sizeof(st.title) - 1] = '\0';
+    }
+    int nextIdx = schedule.findNextIndex(nowMin);
+    if (nextIdx >= 0 && nextIdx < schedule.count) {
+      const ScheduleItem &nxt = schedule.items[nextIdx];
+      st.hasNext = true;
+      st.nextStartMin = nxt.startMin;
+      st.nextEndMin = nxt.endMin;
+      strncpy(st.nextTitle, nxt.name, sizeof(st.nextTitle) - 1);
+      st.nextTitle[sizeof(st.nextTitle) - 1] = '\0';
+    }
+  }
+  ui.setScheduleState(st);
+}
+
+void resetScheduleRuntime() {
+  schedActiveIdx = -1;
+  schedActiveDate = 0;
+  schedPopupVisible = false;
+  schedSkipped = false;
+  schedConfirmed = false;
+  schedRepeatCount = 0;
+  syncScheduleUI();
+}
+
+void confirmScheduleItem() {
+  if (schedActiveIdx < 0 || schedActiveIdx >= schedule.count) return;
+  const ScheduleItem &item = schedule.items[schedActiveIdx];
+  unsigned long nowSecOfDay = static_cast<unsigned long>(rtc.getHour()) * 3600UL +
+                              static_cast<unsigned long>(rtc.getMinute()) * 60UL +
+                              static_cast<unsigned long>(rtc.getSecond());
+  unsigned long totalSec = static_cast<unsigned long>(item.endMin - item.startMin) * 60UL;
+  unsigned long endSecOfDay = static_cast<unsigned long>(item.endMin) * 60UL;
+  unsigned long remainSec = (endSecOfDay > nowSecOfDay) ? (endSecOfDay - nowSecOfDay) : 1UL;
+  bool isBreak = (item.category == SCHED_BREAK);
+
+  schedActiveCategory = item.category;
+  schedPopupVisible = false;
+  schedSkipped = false;
+  schedConfirmed = true;
+  engine.startCustom(totalSec, remainSec, isBreak);
+  audio.playStartTone();
+  syncScheduleUI();
+  if (ui.getMode() != UI_MODE_POMODORO) {
+    ui.setMode(UI_MODE_POMODORO);
+  }
+  Serial.printf("[SCHED] Confirmed '%s' (%lu/%lu sec)\n", item.name, remainSec, totalSec);
+}
+
+void skipScheduleItem() {
+  schedPopupVisible = false;
+  schedSkipped = true;
+  schedConfirmed = false;
+  engine.reset();
+  audio.playClickTone();
+  syncScheduleUI();
+  if (config.data.scheduleMode && ui.getMode() != UI_MODE_POMODORO) {
+    ui.setMode(UI_MODE_POMODORO);
+  }
+  Serial.println("[SCHED] Skipped current item");
+}
 
 unsigned long lastTelemetryTime = 0;
 bool stableVbusIn = false;
@@ -54,8 +140,8 @@ void updateUsbMode(unsigned long now) {
   stableVbusIn = candidateVbusIn;
   if (stableVbusIn) {
     startIdleTimerAfterUnplug = false;
-    if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
-      Serial.println("[POWER] USB connected during countdown; keep timer and page");
+    if (config.data.scheduleMode || engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
+      Serial.println("[POWER] USB connected during countdown/schedule; keep timer and page");
     } else if (ui.getMode() != UI_MODE_STATS) {
       ui.setMode(UI_MODE_CLOCK);
       Serial.println("[POWER] Stable USB input -> Clock page");
@@ -136,13 +222,15 @@ void setup() {
     Serial.println("DISABLED/NOT FOUND");
   }
 
-  // 8. 初始化番茄钟状态机与 Web 控制台
+  // 8. 初始化番茄钟状态机、日程表与 Web 控制台
+  schedule.begin();
   engine.begin(config.getFaceDurationSec(3), config.getBreakDurationSec(), config.data.autoBreak);
-  portal.begin(config, stats, rtc);
+  portal.begin(config, stats, rtc, schedule);
+  syncScheduleUI();
 
   stableVbusIn = candidateVbusIn = power.vbusIn;
   vbusCandidateSince = millis();
-  ui.setMode(stableVbusIn ? UI_MODE_CLOCK : UI_MODE_POMODORO);
+  ui.setMode((stableVbusIn && !config.data.scheduleMode) ? UI_MODE_CLOCK : UI_MODE_POMODORO);
 
   uint8_t initialRotation = imu.getDisplayRotation(0);
   ui.setRotation(initialRotation);
@@ -162,7 +250,18 @@ void loop() {
   portal.handleClient();
   if (portal.consumeConfigChanged()) {
     applyRuntimeConfig();
+    resetScheduleRuntime();
+    if (!config.data.scheduleMode) {
+      engine.reset();
+    } else if (ui.getMode() != UI_MODE_POMODORO) {
+      ui.setMode(UI_MODE_POMODORO);
+    }
     Serial.println("[CONFIG] Runtime config updated from Web portal");
+  }
+  if (portal.consumeScheduleChanged()) {
+    resetScheduleRuntime();
+    engine.reset();
+    Serial.println("[SCHED] Schedule updated from Web portal");
   }
   if ((portal.consumeSyncRequested() || rtc.shouldPeriodicResync(now)) && !portal.isActive()) {
     rtc.startAsyncSync(config.data.wifiSsid, config.data.wifiPass, config.data.timezoneOffsetHours, 10000);
@@ -172,9 +271,13 @@ void loop() {
   uint8_t faceAtLoopStart = engine.activeFace;
   engine.tick(now);
 
-  // 专注完成统计入库（仅专注周期计入，防止重复记录）
-  if (engine.state == STATE_COMPLETED && !engine.lastSessionWasBreak && !engine.completionRecorded) {
-    uint16_t mins = static_cast<uint16_t>(max<unsigned long>(1, engine.focusDurationSec / 60));
+  // 专注完成统计入库（自由模式：仅专注周期；日程模式：仅日程分类为“专注”的条目计入）
+  bool countForStats = config.data.scheduleMode
+                           ? (schedActiveCategory == SCHED_FOCUS)
+                           : (!engine.lastSessionWasBreak);
+  if (engine.state == STATE_COMPLETED && countForStats && !engine.completionRecorded) {
+    unsigned long srcSec = config.data.scheduleMode ? engine.currentTotalDurationSec : engine.focusDurationSec;
+    uint16_t mins = static_cast<uint16_t>(max<unsigned long>(1, srcSec / 60));
     stats.recordCompletion(rtc.getDateYyyyMmDd(), mins);
     engine.completionRecorded = true;
     Serial.printf("[STATS] Recorded %u min focus (Total=%lu)\n", mins, static_cast<unsigned long>(stats.totalPomodoros));
@@ -237,6 +340,43 @@ void loop() {
     }
   }
 
+  // 3.5 日程模式调度检查（仅在日程模式且处于番茄钟/日程页时触发）
+  if (config.data.scheduleMode && ui.getMode() == UI_MODE_POMODORO && rtc.timeValid) {
+    uint32_t today = rtc.getDateYyyyMmDd();
+    int nowMin = rtc.getHour() * 60 + rtc.getMinute();
+    int idx = schedule.findActiveIndex(nowMin);
+    if (idx != schedActiveIdx || today != schedActiveDate) {
+      schedActiveIdx = idx;
+      schedActiveDate = today;
+      schedSkipped = false;
+      schedConfirmed = false;
+      if (idx >= 0) {
+        schedPopupVisible = true;
+        schedActiveCategory = schedule.items[idx].category;
+        engine.reset();
+        if (!imu.isFlippedDown()) {
+          power.setLowPowerCpu(false);
+          ui.setPanelOutputOff(false, power);
+        }
+        audio.playCompletionChime();
+        schedLastRepeatMs = now;
+        schedRepeatCount = 0;
+        Serial.printf("[SCHED] Item arrived: %s\n", schedule.items[idx].name);
+      } else {
+        schedPopupVisible = false;
+        engine.reset();
+      }
+      syncScheduleUI();
+    } else if (schedPopupVisible && !imu.isFlippedDown() && !ui.isPanelOutputOff() &&
+               schedRepeatCount < 3 && (now - schedLastRepeatMs >= 15000UL)) {
+      audio.playCompletionChime();
+      schedLastRepeatMs = now;
+      schedRepeatCount++;
+    }
+  } else if (!config.data.scheduleMode && (schedPopupVisible || schedActiveIdx >= 0)) {
+    resetScheduleRuntime();
+  }
+
   // 4. 轮询姿态传感器
   bool oriChanged = imu.update();
 
@@ -253,26 +393,31 @@ void loop() {
     Serial.printf("[IMU] Orientation Changed -> %s (ax=%.2f, ay=%.2f, az=%.2f, roll=%.1f deg)\n",
                   imu.getOrientationName(), imu.ax, imu.ay, imu.az, imu.smoothRollAngle);
 
+    bool inSchedPomo = config.data.scheduleMode && (ui.getMode() == UI_MODE_POMODORO);
     if (imu.isFlippedDown()) {
       ui.setPanelOutputOff(true, power);
-      if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
-        Serial.println("[POMO] Auto Pause by Flip Down (Panel Off)");
-        engine.pause(PAUSE_BY_FLIP);
-      } else if (engine.state == STATE_COMPLETED) {
-        Serial.println("[POMO] Confirm Completed by Flip Down");
-        engine.confirmCompleted();
+      if (!inSchedPomo) {
+        if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
+          Serial.println("[POMO] Auto Pause by Flip Down (Panel Off)");
+          engine.pause(PAUSE_BY_FLIP);
+        } else if (engine.state == STATE_COMPLETED) {
+          Serial.println("[POMO] Confirm Completed by Flip Down");
+          engine.confirmCompleted();
+        }
       }
     } else if (imu.isBackwardPaused()) {
       if (!ui.isManualScreenOff()) {
         power.setLowPowerCpu(false);
         ui.setPanelOutputOff(false, power);
       }
-      if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
-        Serial.println("[POMO] Auto Pause by Backward Flip!");
-        engine.pause(PAUSE_BY_FLIP);
-      } else if (engine.state == STATE_COMPLETED) {
-        Serial.println("[POMO] Confirm Completed by Backward Flip");
-        engine.confirmCompleted();
+      if (!inSchedPomo) {
+        if (engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
+          Serial.println("[POMO] Auto Pause by Backward Flip!");
+          engine.pause(PAUSE_BY_FLIP);
+        } else if (engine.state == STATE_COMPLETED) {
+          Serial.println("[POMO] Confirm Completed by Backward Flip");
+          engine.confirmCompleted();
+        }
       }
     } else if (imu.isTiltedFace()) {
       if (!ui.isManualScreenOff()) {
@@ -282,8 +427,8 @@ void loop() {
       uint8_t face = imu.getFaceIndex();
       unsigned long faceSec = config.getFaceDurationSec(face);
 
-      if (ui.getMode() == UI_MODE_CLOCK || ui.getMode() == UI_MODE_STATS || engine.pauseReason == PAUSE_BY_USB) {
-        // 时钟页和统计页下翻面只调整显示方向
+      if (inSchedPomo || ui.getMode() == UI_MODE_CLOCK || ui.getMode() == UI_MODE_STATS || engine.pauseReason == PAUSE_BY_USB) {
+        // 日程模式、时钟页和统计页下翻面只调整显示方向，不覆盖当前时长
       } else if (engine.activeFace != face || engine.state == STATE_IDLE || engine.state == STATE_COMPLETED) {
         Serial.printf("[POMO] Tilt to New Face %u (%lu sec) -> Start Timer!\n", face, faceSec);
         engine.startFace(face, faceSec);
@@ -296,7 +441,7 @@ void loop() {
   }
 
   if (startIdleTimerAfterUnplug) {
-    if (stableVbusIn || engine.state != STATE_IDLE || ui.getMode() != UI_MODE_POMODORO) {
+    if (config.data.scheduleMode || stableVbusIn || engine.state != STATE_IDLE || ui.getMode() != UI_MODE_POMODORO) {
       startIdleTimerAfterUnplug = false;
     } else if (imu.isReady && imu.isTiltedFace() &&
                imu.candidateOrientation == imu.currentOrientation &&
@@ -322,10 +467,45 @@ void loop() {
       ui.setManualScreenOff(false);
       if (!imu.isFlippedDown()) ui.setPanelOutputOff(false, power);
       Serial.println("[UI] Wake display by touch");
-    } else if (ui.checkScreenOffClick(input.lastTapX, input.lastTapY) && !input.lastTapFromButton) {
-      ui.setManualScreenOff(true);
-      ui.setPanelOutputOff(true, power);
-      Serial.println("[UI] Manual panel off; tap anywhere to wake");
+    } else if (ui.checkModeSwitchClick(input.lastTapX, input.lastTapY) && !input.lastTapFromButton) {
+      config.data.scheduleMode = !config.data.scheduleMode;
+      config.save();
+      resetScheduleRuntime();
+      engine.reset();
+      if (config.data.scheduleMode && ui.getMode() == UI_MODE_CLOCK) {
+        if (rtc.timeValid) {
+          int nowMin = rtc.getHour() * 60 + rtc.getMinute();
+          int idx = schedule.findActiveIndex(nowMin);
+          if (idx >= 0) {
+            schedActiveIdx = idx;
+            schedActiveDate = rtc.getDateYyyyMmDd();
+            schedPopupVisible = true;
+            schedActiveCategory = schedule.items[idx].category;
+            syncScheduleUI();
+            audio.playCompletionChime();
+            schedLastRepeatMs = now;
+            schedRepeatCount = 0;
+          } else {
+            ui.setMode(UI_MODE_POMODORO);
+            audio.playClickTone();
+          }
+        } else {
+          ui.setMode(UI_MODE_POMODORO);
+          audio.playClickTone();
+        }
+      } else {
+        audio.playClickTone();
+      }
+      ui.forceRedraw();
+      Serial.printf("[UI] Mode switched -> %s\n", config.data.scheduleMode ? "SCHEDULE" : "FREE");
+    } else if (config.data.scheduleMode &&
+               (ui.getMode() == UI_MODE_POMODORO || ui.getMode() == UI_MODE_CLOCK) &&
+               schedPopupVisible) {
+      if (input.lastTapFromButton || ui.checkScheduleConfirmClick(input.lastTapX, input.lastTapY)) {
+        confirmScheduleItem();
+      } else if (ui.checkScheduleSkipClick(input.lastTapX, input.lastTapY)) {
+        skipScheduleItem();
+      }
     } else if (ui.checkClockStyleButtonClick(input.lastTapX, input.lastTapY) && !input.lastTapFromButton) {
       config.data.clockTheme = (config.data.clockTheme + 1) % 2;
       config.save();
@@ -352,21 +532,25 @@ void loop() {
     } else {
       int clickedMode = ui.checkBadgeClick(input.lastTapX, input.lastTapY);
       if (clickedMode >= 0 && !input.lastTapFromButton) {
-        if (clickedMode != (int)ui.getMode()) {
+        if (!config.data.scheduleMode && clickedMode != (int)ui.getMode()) {
           ui.setMode((UIMode)clickedMode);
           Serial.printf("[UI] Mode Switched to %d\n", clickedMode);
           audio.playClickTone();
         }
       } else if (input.lastTapFromButton || ui.getMode() == UI_MODE_POMODORO) {
-        engine.toggle();
-        if (engine.state != STATE_FOCUS_RUNNING && engine.state != STATE_BREAK_RUNNING) audio.playClickTone();
+        if (!config.data.scheduleMode) {
+          engine.toggle();
+          if (engine.state != STATE_FOCUS_RUNNING && engine.state != STATE_BREAK_RUNNING) audio.playClickTone();
+        }
       }
     }
   } else if (action == ACTION_LONG_PRESS) {
-    Serial.println("[USER] Long Press Event -> RESET TIMER");
-    audio.stop();
-    audio.playClickTone();
-    engine.reset();
+    if (!config.data.scheduleMode) {
+      Serial.println("[USER] Long Press Event -> RESET TIMER");
+      audio.stop();
+      audio.playClickTone();
+      engine.reset();
+    }
   }
 
   // 7. 音频提示与完成态重复提醒（最多重响 3 次，间隔 15 秒）

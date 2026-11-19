@@ -94,6 +94,20 @@ public:
     stateChanged = true;
   }
 
+  void startCustom(unsigned long totalSec, unsigned long remainingSec, bool isBreak) {
+    if (totalSec == 0) totalSec = 1;
+    if (remainingSec > totalSec) remainingSec = totalSec;
+    state = isBreak ? STATE_BREAK_RUNNING : STATE_FOCUS_RUNNING;
+    pauseReason = PAUSE_NONE;
+    currentTotalDurationSec = totalSec;
+    elapsedMs = (totalSec - remainingSec) * 1000UL;
+    lastResumeTimestampMs = millis();
+    isAlerting = false;
+    lastSessionWasBreak = isBreak;
+    completionRecorded = false;
+    stateChanged = true;
+  }
+
   void pause(PauseReason reason = PAUSE_BY_USER) {
     if (state == STATE_FOCUS_RUNNING) {
       updateElapsed();
