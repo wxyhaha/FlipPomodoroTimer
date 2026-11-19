@@ -22,9 +22,9 @@ void AudioManager::enqueue(Cue cue) {
   if (!isReady || !requests) return;
   if (currentVolume == 0 && cue != Cue::Test) return;
   portENTER_CRITICAL(&stateMux);
-  if (cue == Cue::Click && selected != Cue::None) {
+  if ((cue == Cue::Click || cue == Cue::Pet) && selected != Cue::None) {
     portEXIT_CRITICAL(&stateMux);
-    return; // A page click must not cut off an important timer cue.
+    return; // A page click or pet sound must not cut off an important timer cue.
   }
   Request request{++generation, cue};
   selected = cue;
@@ -41,6 +41,8 @@ void AudioManager::setVolume(uint8_t volume) {
 
 void AudioManager::playStartTone() { enqueue(Cue::Start); }
 void AudioManager::playCompletionChime() { enqueue(Cue::Completion); }
+void AudioManager::playHourlyChime() { enqueue(Cue::HourlyChime); }
+void AudioManager::playPetTone() { enqueue(Cue::Pet); }
 void AudioManager::playClickTone() { enqueue(Cue::Click); }
 void AudioManager::playTest() { enqueue(Cue::Test); }
 
@@ -120,6 +122,49 @@ bool AudioManager::playPcm(const int16_t *samples, size_t count, uint32_t id) {
 bool AudioManager::playCue(const Request &request) {
   static const Segment click[] = {{1500,15}};
   if (request.cue == Cue::Click) return sequence(click, 1, request.id);
+  if (request.cue == Cue::Pet || request.cue == Cue::HourlyChime) {
+    // Soft bell/electric-piano harmonic voice with exponential decay
+    auto playSoftNote = [&](uint16_t freq, uint16_t durationMs, float gain, float decayRate) -> bool {
+      constexpr uint32_t sampleRate = 16000;
+      uint32_t total = durationMs * sampleRate / 1000;
+      uint32_t phase1 = 0, phase2 = 0;
+      uint32_t inc1 = (static_cast<uint64_t>(freq) << 32) / sampleRate;
+      uint32_t inc2 = (static_cast<uint64_t>(freq * 2U) << 32) / sampleRate;
+      int16_t pcm[128 * 2];
+      for (uint32_t pos = 0; pos < total;) {
+        if (!current(request.id)) return false;
+        size_t batch = min(static_cast<uint32_t>(128), total - pos);
+        for (size_t i = 0; i < batch; ++i) {
+          uint32_t n = pos + i;
+          float t = static_cast<float>(n) / static_cast<float>(sampleRate);
+          float att = n < 96 ? static_cast<float>(n) / 96.0f : 1.0f;
+          float rel = (total - n) < 160 ? static_cast<float>(total - n) / 160.0f : 1.0f;
+          float env = gain * att * rel * expf(-decayRate * t);
+          float s = static_cast<float>(sine[phase1 >> 24]) * 0.80f +
+                    static_cast<float>(sine[phase2 >> 24]) * 0.20f;
+          int16_t sample = static_cast<int16_t>(constrain(lroundf(s * env), -30000L, 30000L));
+          pcm[2 * i] = pcm[2 * i + 1] = sample;
+          phase1 += inc1;
+          phase2 += inc2;
+        }
+        size_t bytes = batch * 4;
+        if (i2s.write(reinterpret_cast<uint8_t *>(pcm), bytes) != bytes) return false;
+        pos += batch;
+      }
+      return true;
+    };
+
+    if (request.cue == Cue::Pet) {
+      // Gentle playful two-note purr chime: G5 -> C6
+      return playSoftNote(784, 85, 0.42f, 10.0f) &&
+             playSoftNote(1047, 145, 0.46f, 8.5f);
+    }
+    // Hourly chime: soft warm C5 -> E5 -> G5 -> C6 arpeggio (~1.5s)
+    return playSoftNote(523, 280, 0.45f, 4.2f) &&
+           playSoftNote(659, 280, 0.46f, 4.2f) &&
+           playSoftNote(784, 300, 0.48f, 4.0f) &&
+           playSoftNote(1047, 640, 0.52f, 2.8f);
+  }
   if (request.cue == Cue::Start)
     return playPcm(PianoAudio::kStart, sizeof(PianoAudio::kStart) / sizeof(int16_t), request.id);
   if (request.cue == Cue::Completion)
@@ -139,6 +184,8 @@ void AudioManager::taskLoop() {
   for (;;) {
     if (xQueueReceive(requests, &request, portMAX_DELAY) != pdTRUE || !current(request.id)) continue;
     const char *name = request.cue == Cue::Completion ? "completion" :
+        request.cue == Cue::HourlyChime ? "hourly-chime" :
+        request.cue == Cue::Pet ? "pet" :
         request.cue == Cue::Start ? "start" : request.cue == Cue::Test ? "speaker-test" : "click";
     Serial.printf("[AUDIO] cue=%s begin\n", name);
     uint32_t playbackStarted = millis();

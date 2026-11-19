@@ -22,6 +22,10 @@ enum ClockTheme {
   THEME_PIXEL = 3,
   THEME_HOURGLASS = 4
 };
+enum ClockPageStyle {
+  CLOCK_STYLE_SKY = 0,
+  CLOCK_STYLE_PIXEL_CAT = 1
+};
 
 class DisplayUI {
 public:
@@ -44,8 +48,12 @@ public:
   Arduino_XCA9554SWSPI* getExpander() const { return expander; }
   int checkBadgeClick(int16_t x, int16_t y) const;
   bool checkScreenOffClick(int16_t x, int16_t y) const;
+  bool checkClockStyleButtonClick(int16_t x, int16_t y) const;
+  bool checkClockPetClick(int16_t x, int16_t y, uint8_t clockTheme) const;
   bool checkPortalButtonClick(int16_t x, int16_t y) const;
   bool checkThemeButtonClick(int16_t x, int16_t y) const;
+  void triggerClockPetHappy();
+  void triggerHourlyChimeAnim();
   bool isAnimating() const { return rotating; }
   void forceRedraw() { needsRedraw = true; }
 
@@ -74,7 +82,19 @@ private:
   uint32_t lastTotalPomodoros = 0;
   uint8_t lastPulseLevel = 255;
   uint8_t lastTheme = 0;
+  uint8_t lastClockTheme = 0;
   uint8_t lastPixelStage = 255;
+  unsigned long petHappyUntilMs = 0;
+  unsigned long hourlyChimeStartMs = 0;
+  bool hourlyChimeActive = false;
+  float yarnX = 32.0f;
+  float yarnVx = 0.0f;
+  unsigned long lastClockAnimMs = 0;
+  unsigned long lastYarnUpdateMs = 0;
+  unsigned long meteorStartMs = 0;
+  unsigned long nextMeteorMs = 0;
+  int16_t meteorStartX = 360, meteorStartY = 95;
+  int8_t meteorDir = -1;
 
   struct FlipCardAnim {
     bool active = false;
@@ -127,6 +147,9 @@ private:
   void drawPixelSprite(int x, int y, int scale, uint8_t stage);
   void drawPixelBigTime(const char *text, int cx, int y, int pxSize, uint16_t fgColor);
   void renderExtraTheme(uint8_t theme, const PomodoroEngine &, const IMUSensor &, const RTCManager &, const ConfigManager &, bool full);
+  void drawClockStyleButton(uint8_t clockTheme);
+  void renderClockPage(const IMUSensor &, const PowerManager &, const RTCManager &, const StatsManager &, const ConfigManager &, bool full);
+  bool clockNeedsAnimTick(const IMUSensor &, const RTCManager &, const ConfigManager &);
   void centeredText(const char *text, int baseline, int size, uint16_t color);
   void centeredTextInBox(const char *text, int cx, int baseline, int size, uint16_t color);
 };

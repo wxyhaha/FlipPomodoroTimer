@@ -188,6 +188,10 @@ void loop() {
     if (c == '\n' || c == '\r') {
       command[commandLength] = 0;
       if (!strcmp(command, "AUDIO_TEST")) audio.playTest();
+      else if (!strcmp(command, "CHIME_TEST")) {
+        ui.triggerHourlyChimeAnim();
+        audio.playHourlyChime();
+      }
       commandLength = 0;
     } else if (commandLength < sizeof(command) - 1) command[commandLength++] = c;
     else commandLength = 0;
@@ -204,8 +208,31 @@ void loop() {
   bool previousStableVbus = stableVbusIn;
   updateUsbMode(now);
 
-  // 3. 推进硬件 RTC 时间走时
+  // 3. 推进硬件 RTC 时间走时 & 时钟页整点报时仪式（22:00-07:00 夜间免打扰仅视觉动效）
   rtc.update(now);
+  static uint64_t lastChimeHourKey = 0;
+  static bool chimeBootSettled = false;
+  if (rtc.timeValid) {
+    uint64_t hourKey = static_cast<uint64_t>(rtc.getDateYyyyMmDd()) * 100ULL + rtc.getHour();
+    if (!chimeBootSettled) {
+      chimeBootSettled = true;
+      if (rtc.getMinute() == 0 && rtc.getSecond() <= 3) lastChimeHourKey = hourKey;
+    } else if (rtc.getMinute() == 0 && rtc.getSecond() <= 2 && hourKey != lastChimeHourKey) {
+      lastChimeHourKey = hourKey;
+      if (config.data.hourlyChime && ui.getMode() == UI_MODE_CLOCK &&
+          !ui.isManualScreenOff() && !ui.isPanelOutputOff()) {
+        uint8_t h = rtc.getHour();
+        bool quietNight = (h >= 22 || h < 7);
+        ui.triggerHourlyChimeAnim();
+        if (!quietNight) {
+          audio.playHourlyChime();
+          Serial.printf("[CLOCK] Hourly chime triggered (%02u:00)\n", h);
+        } else {
+          Serial.printf("[CLOCK] Hourly visual-only chime (quiet night %02u:00)\n", h);
+        }
+      }
+    }
+  }
 
   // 4. 轮询姿态传感器
   bool oriChanged = imu.update();
@@ -296,6 +323,16 @@ void loop() {
       ui.setManualScreenOff(true);
       ui.setPanelOutputOff(true, power);
       Serial.println("[UI] Manual panel off; tap anywhere to wake");
+    } else if (ui.checkClockStyleButtonClick(input.lastTapX, input.lastTapY) && !input.lastTapFromButton) {
+      config.data.clockTheme = (config.data.clockTheme + 1) % 2;
+      config.save();
+      ui.forceRedraw();
+      audio.playClickTone();
+      Serial.printf("[UI] Clock theme switched to %u\n", config.data.clockTheme);
+    } else if (ui.checkClockPetClick(input.lastTapX, input.lastTapY, config.data.clockTheme) && !input.lastTapFromButton) {
+      ui.triggerClockPetHappy();
+      audio.playPetTone();
+      Serial.println("[UI] Clock pixel cat petted!");
     } else if (ui.checkPortalButtonClick(input.lastTapX, input.lastTapY) && !input.lastTapFromButton) {
       if (portal.isActive()) portal.stop();
       else portal.start();

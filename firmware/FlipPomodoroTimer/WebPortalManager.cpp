@@ -76,7 +76,7 @@ const char PORTAL_HTML[] PROGMEM = R"rawliteral(
     </div>
 
     <h2 style="margin-top:14px;">声音、显示与表盘主题</h2>
-    <label>表盘主题风格</label>
+    <label>番茄钟主题风格</label>
     <select id="thm" name="thm">
       <option value="0">默认科技环 (Cyber Ring)</option>
       <option value="1">经典翻页时钟 (Fliqlo)</option>
@@ -84,6 +84,15 @@ const char PORTAL_HTML[] PROGMEM = R"rawliteral(
       <option value="3">像素风小番茄 (Pixel)</option>
       <option value="4">流沙沙漏 (Hourglass)</option>
     </select>
+    <label>时钟页主题风格</label>
+    <select id="cthm" name="cthm">
+      <option value="0">极简天象时钟 (24h 昼夜渐变 + 流星)</option>
+      <option value="1">像素小猫 · 时间小世界</option>
+    </select>
+    <div class="row">
+      <span style="font-size:13px;">时钟页整点报时 (22:00-07:00 免打扰)</span>
+      <input type="checkbox" id="hchm" name="hchm" style="width:18px;height:18px;">
+    </div>
     <label>提示音音量: <span id="volVal">75</span> (0=静音)</label>
     <input type="range" id="vol" name="vol" min="0" max="85" oninput="volVal.innerText=this.value">
     <label>屏幕亮度: <span id="briVal">255</span></label>
@@ -105,6 +114,7 @@ async function loadData(){
   ssid.value=d.ssid||''; pass.value=d.pass||''; tz.value=d.tz;
   f1.value=d.f1; f2.value=d.f2; f3.value=d.f3; f4.value=d.f4;
   brk.value=d.brk; aoff.value=d.aoff; abrk.checked=!!d.abrk; thm.value=d.thm||0;
+  cthm.value=d.cthm||0; hchm.checked=(d.hchm!==0);
   vol.value=d.vol; volVal.innerText=d.vol;
   bri.value=d.bri; briVal.innerText=d.bri;
   todayCnt.innerText=d.todayCnt; todayMin.innerText=d.todayMin;
@@ -120,6 +130,7 @@ async function saveCfg(e){
   e.preventDefault();
   const fd = new FormData(cfgForm);
   if(!abrk.checked) fd.append('abrk','0'); else fd.set('abrk','1');
+  if(!hchm.checked) fd.append('hchm','0'); else fd.set('hchm','1');
   const r = await fetch('/api/config',{method:'POST',body:new URLSearchParams(fd)});
   msg.innerText = r.ok ? '已保存并生效！' : '保存失败';
   return false;
@@ -262,6 +273,8 @@ void WebPortalManager::handleApiData() {
   json += "\"bri\":" + String(config->data.brightness) + ",";
   json += "\"aoff\":" + String(config->data.autoScreenOffSec) + ",";
   json += "\"thm\":" + String(config->data.theme) + ",";
+  json += "\"cthm\":" + String(config->data.clockTheme) + ",";
+  json += "\"hchm\":" + String(config->data.hourlyChime ? 1 : 0) + ",";
   json += "\"todayCnt\":" + String(tCnt) + ",";
   json += "\"todayMin\":" + String(tMin) + ",";
   json += "\"totCnt\":" + String(stats ? stats->totalPomodoros : 0) + ",";
@@ -306,6 +319,8 @@ void WebPortalManager::handleSaveConfig() {
   if (server->hasArg("vol")) config->data.audioVolume = constrain(server->arg("vol").toInt(), 0, 85);
   if (server->hasArg("bri")) config->data.brightness = constrain(server->arg("bri").toInt(), 30, 255);
   if (server->hasArg("thm")) config->data.theme = constrain(server->arg("thm").toInt(), 0, 4);
+  if (server->hasArg("cthm")) config->data.clockTheme = constrain(server->arg("cthm").toInt(), 0, 1);
+  if (server->hasArg("hchm")) config->data.hourlyChime = (server->arg("hchm") == "1");
 
   config->save();
   configChanged = true;

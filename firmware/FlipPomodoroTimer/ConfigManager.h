@@ -13,7 +13,9 @@ struct AppConfig {
   uint8_t brightness = 255;                  // 屏幕亮度 (30..255)
   uint16_t autoScreenOffSec = 30;            // 完成后无操作自动息屏秒数 (0=关闭)
   int8_t timezoneOffsetHours = 8;            // 时区偏移（默认东八区 GMT+8）
-  uint8_t theme = 0;                         // 表盘主题 (0..4)
+  uint8_t theme = 0;                         // 番茄钟表盘主题 (0..4)
+  uint8_t clockTheme = 0;                    // 时钟页主题 (0=极简天象, 1=像素小猫)
+  bool hourlyChime = true;                   // 整点报时开关（时钟页生效，22:00-07:00自动静默）
 };
 
 class ConfigManager {
@@ -48,6 +50,8 @@ public:
     if (data.autoScreenOffSec > 600) data.autoScreenOffSec = 600;
     data.timezoneOffsetHours = constrain(prefs.getChar("tz", 8), -12, 14);
     data.theme = constrain(prefs.getUChar("thm", 0), 0, 4);
+    data.clockTheme = constrain(prefs.getUChar("cthm", 0), 0, 1);
+    data.hourlyChime = prefs.getBool("hchm", true);
     prefs.end();
   }
 
@@ -67,6 +71,8 @@ public:
     prefs.putUShort("aoff", data.autoScreenOffSec > 600 ? 600 : data.autoScreenOffSec);
     prefs.putChar("tz", constrain(data.timezoneOffsetHours, -12, 14));
     prefs.putUChar("thm", constrain(data.theme, 0, 4));
+    prefs.putUChar("cthm", constrain(data.clockTheme, 0, 1));
+    prefs.putBool("hchm", data.hourlyChime);
     prefs.end();
     return true;
   }

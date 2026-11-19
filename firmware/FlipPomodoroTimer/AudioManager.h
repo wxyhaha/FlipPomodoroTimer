@@ -18,13 +18,15 @@ public:
   void setVolume(uint8_t volume);
   void playStartTone();
   void playCompletionChime();
+  void playHourlyChime();
+  void playPetTone();
   void playClickTone();
   void playTest();
   void stopCompletion();
   void stop();
 
 private:
-  enum class Cue : uint8_t { None, Click, Start, Completion, Test };
+  enum class Cue : uint8_t { None, Click, Pet, Start, HourlyChime, Completion, Test };
   struct Request { uint32_t id; Cue cue; };
   struct Segment { uint16_t frequency, duration; };
   I2SClass i2s;

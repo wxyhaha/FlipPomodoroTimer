@@ -836,8 +836,16 @@ void DisplayUI::render(const PomodoroEngine &engine, const IMUSensor &imu,
                        const PowerManager &power, const RTCManager &rtc,
                        const StatsManager &stats, const ConfigManager &config,
                        const WebPortalManager &portal) {
-  bool full = needsRedraw || (lastTheme != config.data.theme);
+  bool full = needsRedraw || (lastTheme != config.data.theme) ||
+              (currentMode == UI_MODE_CLOCK && lastClockTheme != config.data.clockTheme);
   dirty = UiRect();
+  if (currentMode == UI_MODE_CLOCK) {
+    renderClockPage(imu, power, rtc, stats, config, full);
+    presenter.present(gfx->getFramebuffer(), currentRotation, dirty);
+    lastTheme = config.data.theme < 5 ? config.data.theme : 0;
+    contentReady = true;
+    return;
+  }
   if (full) {
     gfx->fillScreen(kBlack);
     dirty.full();
@@ -1209,11 +1217,13 @@ void DisplayUI::update(const PomodoroEngine &e, const IMUSensor &imu, const Powe
     }
   }
 
-  bool changed = needsRedraw || lastTheme != c.data.theme || lastState != e.state || lastBattery != p.batteryPercent ||
+  bool clockTick = clockNeedsAnimTick(imu, r, c);
+  bool changed = needsRedraw || lastTheme != c.data.theme || lastClockTheme != c.data.clockTheme ||
+      lastState != e.state || lastBattery != p.batteryPercent ||
       lastBatteryConnected != p.batteryConnected || lastCharging != p.charging || lastVbus != p.vbusIn ||
       lastDate != date || lastNtpSyncing != r.syncInProgress ||
       (currentMode == UI_MODE_POMODORO && (lastSeconds != remaining || lastClockSecond / 60 != second / 60 || lastPendingFace != pendingFace || pulseTick)) ||
-      (currentMode == UI_MODE_CLOCK && lastClockSecond != second) ||
+      (currentMode == UI_MODE_CLOCK && (lastClockSecond != second || clockTick)) ||
       (currentMode == UI_MODE_STATS && (lastPortalMode != w.getMode() || lastPortalClients != w.getConnectedClients() || lastTotalPomodoros != s.totalPomodoros));
 
   auto anyFlipActive = [&]() {
