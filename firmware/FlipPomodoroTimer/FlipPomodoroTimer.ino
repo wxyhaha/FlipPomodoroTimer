@@ -529,6 +529,28 @@ void loop() {
       config.save();
       ui.forceRedraw();
       audio.playClickTone();
+    } else if (!input.lastTapFromButton && ui.checkStatsControlClick(input.lastTapX, input.lastTapY) > 0) {
+      int ctrl = ui.checkStatsControlClick(input.lastTapX, input.lastTapY);
+      if (ctrl == 1) {
+        int v = static_cast<int>(config.data.audioVolume) - 10;
+        config.data.audioVolume = static_cast<uint8_t>(constrain(v, 0, 85));
+        audio.setVolume(config.data.audioVolume);
+      } else if (ctrl == 2) {
+        int v = static_cast<int>(config.data.audioVolume) + 10;
+        config.data.audioVolume = static_cast<uint8_t>(constrain(v, 0, 85));
+        audio.setVolume(config.data.audioVolume);
+      } else if (ctrl == 3) {
+        int b = static_cast<int>(config.data.brightness) - 25;
+        config.data.brightness = static_cast<uint8_t>(constrain(b, 30, 255));
+        power.setUserBrightness(config.data.brightness);
+      } else if (ctrl == 4) {
+        int b = static_cast<int>(config.data.brightness) + 25;
+        config.data.brightness = static_cast<uint8_t>(constrain(b, 30, 255));
+        power.setUserBrightness(config.data.brightness);
+      }
+      config.save();
+      ui.forceRedraw();
+      audio.playClickTone();
     } else {
       int clickedMode = ui.checkBadgeClick(input.lastTapX, input.lastTapY);
       if (clickedMode >= 0 && !input.lastTapFromButton) {

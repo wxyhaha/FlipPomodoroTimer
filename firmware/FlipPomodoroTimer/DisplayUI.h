@@ -70,6 +70,7 @@ public:
   bool checkClockDemoClick(int16_t x, int16_t y) const;
   bool checkPortalButtonClick(int16_t x, int16_t y) const;
   bool checkThemeButtonClick(int16_t x, int16_t y) const;
+  int checkStatsControlClick(int16_t x, int16_t y) const;
   void triggerClockPetHappy();
   void triggerHourlyChimeAnim();
   void toggleClockDemo();

@@ -255,9 +255,15 @@ void ensureSunSprite(float warmth) {
   }
 }
 
+inline float smoothstep01(float t) {
+  t = constrain(t, 0.0f, 1.0f);
+  return t * t * (3.0f - 2.0f * t);
+}
+
 // 绘制太阳与多层柔和大气光晕 (warmth: 0=正午淡暖白, 1=晨昏暖橘红)
-// 允许穿过顶部状态栏背后 (y>=0)，并在时间数字上沿 (y=152..164) 平滑淡出
-void drawSunGlowAndDisc(uint16_t *fb, int cx, int cy, float warmth) {
+// 允许穿过顶部状态栏背后 (y>=0)，并在时间数字上沿 (y=142..172) 用 Smoothstep 柔和淡出
+void drawSunGlowAndDisc(uint16_t *fb, int cx, int cy, float warmth, float trajAlpha) {
+  if (trajAlpha <= 0.01f) return;
   ensureSunSprite(warmth);
 
   RGB glowC = lerpRgb({255, 236, 198}, {255, 134, 64}, warmth);
@@ -267,12 +273,12 @@ void drawSunGlowAndDisc(uint16_t *fb, int cx, int cy, float warmth) {
   constexpr int R_GLOW2 = R_GLOW * R_GLOW;
   const float glowStrength = (84.0f + warmth * 40.0f) / 255.0f;
 
-  int y0 = max(0, cy - R_GLOW), y1 = min(164, cy + R_GLOW);
+  int y0 = max(0, cy - R_GLOW), y1 = min(172, cy + R_GLOW);
   int x0 = max(0, cx - R_GLOW), x1 = min(479, cx + R_GLOW);
   for (int y = y0; y <= y1; ++y) {
     int dy = y - cy;
     int dy2 = dy * dy;
-    float vFade = (y > 152) ? static_cast<float>(164 - y) / 12.0f : 1.0f;
+    float vFade = ((y > 142) ? smoothstep01(static_cast<float>(172 - y) / 30.0f) : 1.0f) * trajAlpha;
     uint16_t *row = fb + y * 480;
     for (int x = x0; x <= x1; ++x) {
       int dx = x - cx;
@@ -288,16 +294,16 @@ void drawSunGlowAndDisc(uint16_t *fb, int cx, int cy, float warmth) {
   int sx0 = cx - H, sy0 = cy - H;
   for (int py = 0; py < S; ++py) {
     int dy = sy0 + py;
-    if (dy < 0 || dy > 164) continue;
-    uint8_t vFade = (dy > 152) ? static_cast<uint8_t>(((164 - dy) * 255) / 12) : 255;
+    if (dy < 0 || dy > 172) continue;
+    float vFade = ((dy > 142) ? smoothstep01(static_cast<float>(172 - dy) / 30.0f) : 1.0f) * trajAlpha;
     uint16_t *row = fb + dy * 480;
     for (int px = 0; px < S; ++px) {
       int dx = sx0 + px;
       if (dx < 0 || dx >= 480) continue;
       uint8_t a = gSunCache.alpha[py * S + px];
       if (!a) continue;
-      if (vFade < 255) a = static_cast<uint8_t>((static_cast<uint16_t>(a) * vFade) / 255U);
-      if (a > 1) row[dx] = blend565(row[dx], gSunCache.color[py * S + px], a);
+      uint8_t effA = static_cast<uint8_t>(a * vFade);
+      if (effA > 1) row[dx] = blend565(row[dx], gSunCache.color[py * S + px], effA);
     }
   }
 }
@@ -384,8 +390,9 @@ void ensureMoonSprite(float phase) {
   }
 }
 
-// 绘制精致月相与双层银蓝月晕（可穿过顶部状态栏背后 y>=0，在数字上沿 y=152..164 淡出）
-void drawMoonPhaseAndGlow(uint16_t *fb, int cx, int cy, float phase) {
+// 绘制精致月相与双层银蓝月晕（可穿过顶部状态栏背后 y>=0，在数字上沿 y=142..172 用 Smoothstep 淡出）
+void drawMoonPhaseAndGlow(uint16_t *fb, int cx, int cy, float phase, float trajAlpha) {
+  if (trajAlpha <= 0.01f) return;
   ensureMoonSprite(phase);
 
   // 1. 双层柔和月晕（外层冷银蓝 + 内层暖银白）
@@ -394,12 +401,12 @@ void drawMoonPhaseAndGlow(uint16_t *fb, int cx, int cy, float phase) {
   constexpr int R_GLOW = 54;
   constexpr int R_GLOW2 = R_GLOW * R_GLOW;
   constexpr int R_IN2 = 28 * 28;
-  int y0 = max(0, cy - R_GLOW), y1 = min(164, cy + R_GLOW);
+  int y0 = max(0, cy - R_GLOW), y1 = min(172, cy + R_GLOW);
   int x0 = max(0, cx - R_GLOW), x1 = min(479, cx + R_GLOW);
   for (int y = y0; y <= y1; ++y) {
     int dy = y - cy;
     int dy2 = dy * dy;
-    float vFade = (y > 152) ? static_cast<float>(164 - y) / 12.0f : 1.0f;
+    float vFade = ((y > 142) ? smoothstep01(static_cast<float>(172 - y) / 30.0f) : 1.0f) * trajAlpha;
     uint16_t *row = fb + y * 480;
     for (int x = x0; x <= x1; ++x) {
       int dx = x - cx;
@@ -420,16 +427,16 @@ void drawMoonPhaseAndGlow(uint16_t *fb, int cx, int cy, float phase) {
   int sx0 = cx - (R + 1), sy0 = cy - (R + 1);
   for (int py = 0; py < S; ++py) {
     int dy = sy0 + py;
-    if (dy < 0 || dy > 164) continue;
-    uint8_t vFade = (dy > 152) ? static_cast<uint8_t>(((164 - dy) * 255) / 12) : 255;
+    if (dy < 0 || dy > 172) continue;
+    float vFade = ((dy > 142) ? smoothstep01(static_cast<float>(172 - dy) / 30.0f) : 1.0f) * trajAlpha;
     uint16_t *row = fb + dy * 480;
     for (int px = 0; px < S; ++px) {
       int dx = sx0 + px;
       if (dx < 0 || dx >= 480) continue;
       uint8_t a = gMoonCache.alpha[py * S + px];
       if (!a) continue;
-      if (vFade < 255) a = static_cast<uint8_t>((static_cast<uint16_t>(a) * vFade) / 255U);
-      if (a > 1) row[dx] = blend565(row[dx], gMoonCache.color[py * S + px], a);
+      uint8_t effA = static_cast<uint8_t>(a * vFade);
+      if (effA > 1) row[dx] = blend565(row[dx], gMoonCache.color[py * S + px], effA);
     }
   }
 }
@@ -1154,21 +1161,26 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
       }
     }
 
-    // 3. 真实日月轨迹与月相（在时间数字上方 y=64..148 升降，可自然掠过顶部状态栏背后）
+    // 3. 真实日月轨迹与月相（在时间数字上方 y=64..156 升降，首尾 12% Smoothstep 缓进缓出，可自然掠过顶部状态栏背后）
+    auto calcTrajAlpha = [](float p) {
+      if (p < 0.12f) return smoothstep01(p / 0.12f);
+      if (p > 0.88f) return smoothstep01((1.0f - p) / 0.12f);
+      return 1.0f;
+    };
     if (effectiveTimeValid && hourF >= 5.75f && hourF <= 18.25f) {
       float p = (hourF - 5.75f) / 12.5f;
       int sunX = static_cast<int>(lroundf(68.0f + p * 344.0f)) + pxShift / 2;
-      int sunY = static_cast<int>(lroundf(148.0f - sinf(p * kPi) * 84.0f));
-      drawSunGlowAndDisc(fb, sunX, sunY, warmth);
+      int sunY = static_cast<int>(lroundf(156.0f - sinf(p * kPi) * 92.0f));
+      drawSunGlowAndDisc(fb, sunX, sunY, warmth, calcTrajAlpha(p));
     } else {
       float nightF = (hourF >= 18.0f) ? (hourF - 18.0f) : (hourF + 6.0f);
       float p = constrain(nightF / 12.0f, 0.0f, 1.0f);
       int moonX = static_cast<int>(lroundf(68.0f + p * 344.0f)) + pxShift / 2;
-      int moonY = static_cast<int>(lroundf(148.0f - sinf(p * kPi) * 84.0f));
+      int moonY = static_cast<int>(lroundf(156.0f - sinf(p * kPi) * 92.0f));
       float mPhase = rtc.timeValid
           ? calcMoonPhase(rtc.currentDateTime.getYear(), rtc.currentDateTime.getMonth(), rtc.currentDateTime.getDay())
           : 0.35f;
-      drawMoonPhaseAndGlow(fb, moonX, moonY, mPhase);
+      drawMoonPhaseAndGlow(fb, moonX, moonY, mPhase, calcTrajAlpha(p));
     }
 
     // 4. 底部三层分形雾化远山剪影（形成天际纵深感）

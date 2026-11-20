@@ -185,9 +185,10 @@ void DisplayUI::setRotation(uint8_t r) {
 
 int DisplayUI::checkBadgeClick(int16_t x, int16_t y) const {
   if (y >= 8 && y < 64) {
-    if (x >= 16 && x < 72) return UI_MODE_POMODORO;
+    if (x >= 16 && x < 72) {
+      return (currentMode == UI_MODE_POMODORO) ? UI_MODE_CLOCK : UI_MODE_POMODORO;
+    }
     if (x >= 82 && x < 138) return UI_MODE_STATS;
-    if (x >= 408 && x < 464) return UI_MODE_CLOCK;
   }
   return -1;
 }
@@ -215,6 +216,16 @@ bool DisplayUI::checkPortalButtonClick(int16_t x, int16_t y) const {
 bool DisplayUI::checkThemeButtonClick(int16_t x, int16_t y) const {
   if (currentMode != UI_MODE_STATS) return false;
   return x >= 290 && x < 448 && y >= 68 && y < 106;
+}
+
+int DisplayUI::checkStatsControlClick(int16_t x, int16_t y) const {
+  if (currentMode != UI_MODE_STATS) return 0;
+  if (y < 334 || y >= 388) return 0;
+  if (x >= 32 && x < 100) return 1;   // 音量 -
+  if (x >= 164 && x < 232) return 2;  // 音量 +
+  if (x >= 248 && x < 316) return 3;  // 亮度 -
+  if (x >= 380 && x < 448) return 4;  // 亮度 +
+  return 0;
 }
 
 void DisplayUI::centeredText(const char *text, int baseline, int size, uint16_t color) {
@@ -373,38 +384,48 @@ void DisplayUI::drawSchedulePopup(const RTCManager &rtc) {
 void DisplayUI::drawHeader(const PowerManager &power, const RTCManager &rtc) {
   bool timer = currentMode == UI_MODE_POMODORO;
   bool statsMode = currentMode == UI_MODE_STATS;
-  bool clockMode = currentMode == UI_MODE_CLOCK;
 
-  gfx->fillCircle(44, 36, 20, timer ? 0x0125 : 0x1082);
+  // 左一：番茄钟 <-> 时钟 合并切换按钮（方案 B：显示点击后将前往的目标图标）
+  gfx->fillCircle(44, 36, 20, statsMode ? 0x1082 : 0x0125);
+  if (timer) {
+    drawClockIcon(44, 36, 26, kIce);
+  } else {
+    drawHourglass(44, 36, 24, statsMode ? kMuted : kIce);
+  }
+
+  // 左二：统计页按钮
   gfx->fillCircle(110, 36, 20, statsMode ? 0x0125 : 0x1082);
-  gfx->fillCircle(436, 36, 20, clockMode ? 0x0125 : 0x1082);
-
-  drawHourglass(44, 36, 24, timer ? kCyan : kMuted);
   drawStatsIcon(110, 36, 22, statsMode ? kCyan : kMuted);
-  drawClockIcon(436, 36, 26, clockMode ? kCyan : kMuted);
 
+  // 右上角：电池电量、USB 接入指示与 NTP 同步指示（右对齐）
   const bool known = power.batteryConnected && power.batteryPercent >= 0;
   uint16_t color = known && power.batteryPercent <= 20 ? kGold : kIce;
-  gfx->drawRoundRect(196, 26, 40, 20, 3, color);
-  gfx->fillRect(236, 32, 4, 8, color);
-  if (known) {
-    int bars = constrain((power.batteryPercent + 24) / 25, 0, 4);
-    for (int i = 0; i < bars; ++i)
-      gfx->fillRect(200 + i * 8, 30, 6, 12, shade(color, power.charging ? 80 : 255));
-  } else {
-    gfx->drawFastHLine(209, 36, 14, kMuted);
-  }
-  if (known && power.charging) {
-    gfx->fillRect(211, 28, 10, 16, kBlack);
-    gfx->fillTriangle(217, 28, 211, 37, 216, 37, kCyan);
-    gfx->fillTriangle(216, 44, 221, 34, 216, 34, kCyan);
-  }
 
-  static const uint8_t segments[10] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f};
   char label[5];
   if (known) snprintf(label, sizeof(label), "%d%%", constrain(power.batteryPercent, 0, 100));
   else strcpy(label, "--%");
-  int x = 248;
+  int labelLen = static_cast<int>(strlen(label));
+  int labelW = (labelLen - 1) * 11 + 9;
+  int labelX = 462 - labelW;
+  int batX = labelX - 52;
+
+  gfx->drawRoundRect(batX, 26, 40, 20, 3, color);
+  gfx->fillRect(batX + 40, 32, 4, 8, color);
+  if (known) {
+    int bars = constrain((power.batteryPercent + 24) / 25, 0, 4);
+    for (int i = 0; i < bars; ++i)
+      gfx->fillRect(batX + 4 + i * 8, 30, 6, 12, shade(color, power.charging ? 80 : 255));
+  } else {
+    gfx->drawFastHLine(batX + 13, 36, 14, kMuted);
+  }
+  if (known && power.charging) {
+    gfx->fillRect(batX + 15, 28, 10, 16, kBlack);
+    gfx->fillTriangle(batX + 21, 28, batX + 15, 37, batX + 20, 37, kCyan);
+    gfx->fillTriangle(batX + 20, 44, batX + 25, 34, batX + 20, 34, kCyan);
+  }
+
+  static const uint8_t segments[10] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f};
+  int x = labelX;
   for (const char *p = label; *p; ++p, x += 11) {
     if (*p >= '0' && *p <= '9') {
       uint8_t bits = segments[*p - '0'];
@@ -423,8 +444,8 @@ void DisplayUI::drawHeader(const PowerManager &power, const RTCManager &rtc) {
       gfx->drawCircle(x + 6, 42, 1, known ? color : kMuted);
     }
   }
-  if (power.vbusIn) gfx->fillCircle(185, 36, 2, kCyan);
-  if (rtc.syncInProgress) gfx->fillCircle(304, 36, 3, kGold);
+  if (power.vbusIn) gfx->fillCircle(batX - 10, 36, 2, kCyan);
+  if (rtc.syncInProgress) gfx->fillCircle(batX - 20, 36, 3, kGold);
 }
 
 void DisplayUI::prepareRing() {
@@ -865,29 +886,29 @@ void DisplayUI::drawStatsPage(const RTCManager &rtc, const StatsManager &stats,
   centeredTextInBox(kThemeNames[thm], 369, 92, 1, kCyan);
 
   // 今日卡片与累计卡片
-  gfx->fillRoundRect(32, 114, 200, 96, 12, kCardBg);
-  gfx->drawRoundRect(32, 114, 200, 96, 12, kCardBd);
-  gfx->fillRoundRect(248, 114, 200, 96, 12, kCardBg);
-  gfx->drawRoundRect(248, 114, 200, 96, 12, kCardBd);
+  gfx->fillRoundRect(32, 110, 200, 82, 12, kCardBg);
+  gfx->drawRoundRect(32, 110, 200, 82, 12, kCardBd);
+  gfx->fillRoundRect(248, 110, 200, 82, 12, kCardBg);
+  gfx->drawRoundRect(248, 110, 200, 82, 12, kCardBd);
 
   uint32_t today = rtc.getDateYyyyMmDd();
   char buf1[32], buf2[32];
   snprintf(buf1, sizeof(buf1), "%u 个", stats.getTodayCount(today));
   snprintf(buf2, sizeof(buf2), "%u 分钟", stats.getTodayMinutes(today));
-  centeredTextInBox("今日完成", 132, 138, 1, kMuted);
-  centeredTextInBox(buf1, 132, 174, 2, kCyan);
-  centeredTextInBox(buf2, 132, 198, 1, kIce);
+  centeredTextInBox("今日完成", 132, 130, 1, kMuted);
+  centeredTextInBox(buf1, 132, 162, 2, kCyan);
+  centeredTextInBox(buf2, 132, 184, 1, kIce);
 
   snprintf(buf1, sizeof(buf1), "%lu 个", static_cast<unsigned long>(stats.totalPomodoros));
   snprintf(buf2, sizeof(buf2), "%lu 分钟", static_cast<unsigned long>(stats.totalFocusMinutes));
-  centeredTextInBox("历史累计", 348, 138, 1, kMuted);
-  centeredTextInBox(buf1, 348, 174, 2, kGold);
-  centeredTextInBox(buf2, 348, 198, 1, kIce);
+  centeredTextInBox("历史累计", 348, 130, 1, kMuted);
+  centeredTextInBox(buf1, 348, 162, 2, kGold);
+  centeredTextInBox(buf2, 348, 184, 1, kIce);
 
   // 近7天柱状图区域
-  gfx->fillRoundRect(32, 224, 416, 152, 12, kCardBg);
-  gfx->drawRoundRect(32, 224, 416, 152, 12, kCardBd);
-  centeredText("近 7 日专注分钟", 248, 1, kMuted);
+  gfx->fillRoundRect(32, 200, 416, 130, 12, kCardBg);
+  gfx->drawRoundRect(32, 200, 416, 130, 12, kCardBd);
+  centeredText("近 7 日专注分钟", 220, 1, kMuted);
 
   uint16_t maxMin = 10;
   for (int i = 0; i < StatsManager::MAX_DAYS; ++i) {
@@ -896,10 +917,10 @@ void DisplayUI::drawStatsPage(const RTCManager &rtc, const StatsManager &stats,
 
   for (int i = 0; i < StatsManager::MAX_DAYS; ++i) {
     int bx = 56 + i * 54;
-    int maxBarH = 74;
+    int maxBarH = 58;
     int barH = stats.days[i].minutes > 0 ? max(4, static_cast<int>(stats.days[i].minutes) * maxBarH / maxMin) : 2;
     uint16_t barColor = stats.days[i].minutes > 0 ? kCyan : kCardBd;
-    gfx->fillRoundRect(bx, 336 - barH, 32, barH, 4, barColor);
+    gfx->fillRoundRect(bx, 294 - barH, 32, barH, 4, barColor);
 
     char lbl[8] = "--";
     if (stats.days[i].yyyymmdd > 0) {
@@ -907,8 +928,32 @@ void DisplayUI::drawStatsPage(const RTCManager &rtc, const StatsManager &stats,
       uint32_t dd = stats.days[i].yyyymmdd % 100;
       snprintf(lbl, sizeof(lbl), "%02lu/%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(dd));
     }
-    centeredTextInBox(lbl, bx + 16, 360, 1, kMuted);
+    centeredTextInBox(lbl, bx + 16, 316, 1, kMuted);
   }
+
+  // 音量与屏幕亮度调节卡片 (y=338..384)
+  auto drawCtrlCard = [&](int x, const char *valText, uint16_t accent) {
+    gfx->fillRoundRect(x, 338, 200, 46, 12, kCardBg);
+    gfx->drawRoundRect(x, 338, 200, 46, 12, kCardBd);
+    gfx->fillRoundRect(x + 6, 344, 34, 34, 8, 0x1082);
+    gfx->drawRoundRect(x + 6, 344, 34, 34, 8, accent);
+    centeredTextInBox("-", x + 23, 369, 2, accent);
+    gfx->fillRoundRect(x + 160, 344, 34, 34, 8, 0x1082);
+    gfx->drawRoundRect(x + 160, 344, 34, 34, 8, accent);
+    centeredTextInBox("+", x + 177, 369, 2, accent);
+    centeredTextInBox(valText, x + 100, 368, 1, kIce);
+  };
+  char volBuf[20], briBuf[20];
+  if (config.data.audioVolume == 0) {
+    strcpy(volBuf, "音量 静音");
+  } else {
+    int volPct = static_cast<int>(lroundf(config.data.audioVolume * 100.0f / 85.0f));
+    snprintf(volBuf, sizeof(volBuf), "音量 %d%%", volPct);
+  }
+  int briPct = static_cast<int>(lroundf(config.data.brightness * 100.0f / 255.0f));
+  snprintf(briBuf, sizeof(briBuf), "亮度 %d%%", briPct);
+  drawCtrlCard(32, volBuf, kCyan);
+  drawCtrlCard(248, briBuf, kGold);
 
   // 底部 Web 控制台 / 配网热点按钮
   PortalMode pMode = portal.getMode();
