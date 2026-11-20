@@ -31,8 +31,6 @@ struct ScheduleUIState {
   bool active = false;
   bool popupVisible = false;
   bool skipped = false;
-  bool voiceListening = false;
-  bool voiceRecognizing = false;
   uint8_t category = 0; // 0=专注, 1=休息, 2=生活
   uint16_t startMin = 0;
   uint16_t endMin = 0;
@@ -67,12 +65,6 @@ public:
   bool checkScheduleConfirmClick(int16_t x, int16_t y) const;
   bool checkScheduleSkipClick(int16_t x, int16_t y) const;
   void setScheduleState(const ScheduleUIState &st) { schedState = st; }
-  void setVoiceRecognizing(bool active) {
-    if (schedState.voiceRecognizing != active) {
-      schedState.voiceRecognizing = active;
-      if (schedState.popupVisible) needsRedraw = true;
-    }
-  }
   bool checkClockStyleButtonClick(int16_t x, int16_t y) const;
   bool checkClockPetClick(int16_t x, int16_t y, uint8_t clockTheme) const;
   bool checkClockDemoClick(int16_t x, int16_t y) const;

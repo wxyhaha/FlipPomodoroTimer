@@ -24,11 +24,6 @@ public:
   void playTest();
   void stopCompletion();
   void stop();
-  size_t readMicPcm(uint8_t *buf, size_t len) {
-    if (!isReady) return 0;
-    return i2s.readBytes(reinterpret_cast<char *>(buf), len);
-  }
-  bool isBusy() const { return selected != Cue::None; }
 
 private:
   enum class Cue : uint8_t { None, Click, Pet, Start, HourlyChime, Completion, Test };

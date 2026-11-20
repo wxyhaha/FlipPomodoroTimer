@@ -60,6 +60,20 @@ static const SkyStop kSkyStops[] = {
   {24.0f, {  2,  4, 14}, { 18, 36, 82} },
 };
 
+static float sSkySmoothPx = 0.0f;
+
+float calcSkyTargetPx(const IMUSensor &imu, uint8_t rotation) {
+  if (!imu.isReady) return 0.0f;
+  float tx = 0.0f;
+  switch (rotation) {
+    case 0: tx =  imu.ax; break;
+    case 1: tx =  imu.ay; break;
+    case 2: tx = -imu.ax; break;
+    case 3: tx = -imu.ay; break;
+  }
+  return (fabsf(tx) > 0.10f) ? constrain(tx * 22.0f, -15.0f, 15.0f) : 0.0f;
+}
+
 // 4x4 Bayer 有序抖动矩阵 (0..15)，彻底消除 RGB565 渐变色带分层
 static const int8_t kBayer4x4[4][4] = {
   { 0,  8,  2, 10},
@@ -168,73 +182,254 @@ float calcMoonPhase(uint16_t y, uint8_t m, uint8_t d) {
   return phase;
 }
 
-// 绘制太阳与多层柔和大气光晕 (warmth: 0=正午淡暖白, 1=晨昏暖橘红)
-void drawSunGlowAndDisc(uint16_t *fb, int cx, int cy, float warmth) {
-  RGB glowC = lerpRgb({255, 236, 198}, {255, 134, 64}, warmth);
-  RGB discC = lerpRgb({255, 252, 240}, {255, 206, 145}, warmth);
-  uint16_t glow565 = rgb565(glowC.r, glowC.g, glowC.b);
-  uint16_t disc565 = rgb565(discC.r, discC.g, discC.b);
+// 快速平方距离衰减查表（避免逐像素 sqrtf）
+inline uint8_t fastGlowFalloff(int d2, int rMax2) {
+  if (d2 >= rMax2) return 0;
+  float u = 1.0f - static_cast<float>(d2) / static_cast<float>(rMax2);
+  // 近似 (1 - sqrt(d2/rMax2))^3 的柔和指数衰减
+  float u2 = u * u;
+  return static_cast<uint8_t>(u2 * u2 * 255.0f);
+}
 
-  constexpr int R_GLOW = 74;
-  constexpr float R_DISC = 12.5f;
-  int y0 = max(60, cy - R_GLOW), y1 = min(479, cy + R_GLOW);
-  int x0 = max(0, cx - R_GLOW),  x1 = min(479, cx + R_GLOW);
-  for (int y = y0; y <= y1; ++y) {
-    int dy = y - cy;
-    int dy2 = dy * dy;
-    uint16_t *row = fb + y * 480;
-    for (int x = x0; x <= x1; ++x) {
-      int dx = x - cx;
-      int d2 = dx * dx + dy2;
-      if (d2 > R_GLOW * R_GLOW) continue;
-      float d = sqrtf(static_cast<float>(d2));
-      float g = 1.0f - d / R_GLOW;
-      uint8_t ga = static_cast<uint8_t>(g * g * g * (82.0f + warmth * 38.0f));
-      if (ga > 1) row[x] = blend565(row[x], glow565, ga);
-      if (d <= R_DISC + 4.0f) {
-        float edge = (d <= R_DISC * 0.55f) ? 1.0f : max(0.0f, 1.0f - (d - R_DISC * 0.55f) / (R_DISC * 0.45f + 4.0f));
-        uint8_t da = static_cast<uint8_t>(edge * edge * 155.0f);
-        if (da > 1) row[x] = blend565(row[x], disc565, da);
+// 精致太阳精灵缓存（日面临边昏暗 + 清晰抗锯齿日轮 + 柔和内日冕与微芒，随 warmth 动态重算）
+struct SunSpriteCache {
+  static constexpr int R = 16;
+  static constexpr int CORONA_PAD = 6;
+  static constexpr int HALF = R + CORONA_PAD;
+  static constexpr int SIZE = HALF * 2 + 1; // 45x45
+  float cachedWarmth = -1.0f;
+  uint16_t color[SIZE * SIZE];
+  uint8_t alpha[SIZE * SIZE];
+};
+static SunSpriteCache gSunCache;
+
+void ensureSunSprite(float warmth) {
+  if (gSunCache.cachedWarmth >= 0.0f && fabsf(warmth - gSunCache.cachedWarmth) < 0.02f) return;
+  gSunCache.cachedWarmth = warmth;
+
+  constexpr int H = SunSpriteCache::HALF;
+  constexpr int S = SunSpriteCache::SIZE;
+  constexpr float Rf = static_cast<float>(SunSpriteCache::R);
+  constexpr float R_OUT = static_cast<float>(H);
+
+  RGB coreC   = lerpRgb({255, 253, 245}, {255, 224, 165}, warmth);
+  RGB limbC   = lerpRgb({255, 232, 168}, {255, 138, 68}, warmth);
+  RGB coronaC = lerpRgb({255, 242, 205}, {255, 164, 96}, warmth);
+
+  for (int py = 0; py < S; ++py) {
+    float dy = static_cast<float>(py - H);
+    for (int px = 0; px < S; ++px) {
+      float dx = static_cast<float>(px - H);
+      float d = sqrtf(dx * dx + dy * dy);
+      int idx = py * S + px;
+      if (d > R_OUT) {
+        gSunCache.alpha[idx] = 0;
+        continue;
+      }
+
+      if (d <= Rf + 1.0f) {
+        float aa = (d <= Rf - 0.2f) ? 1.0f : constrain(1.0f - (d - (Rf - 0.2f)) / 1.2f, 0.0f, 1.0f);
+        float rNorm = constrain(d / Rf, 0.0f, 1.0f);
+        float nz = sqrtf(max(0.0f, 1.0f - rNorm * rNorm));
+        // 日面临边昏暗：中心炽亮、边缘过渡到暖金/橘红
+        float limbT = 1.0f - powf(nz, 0.65f);
+        RGB c = lerpRgb(coreC, limbC, limbT);
+        // 边缘抗锯齿处向内日冕过渡
+        if (aa < 1.0f) {
+          c = lerpRgb(coronaC, c, aa);
+        }
+        uint8_t ca = static_cast<uint8_t>(95.0f + 150.0f * aa);
+        gSunCache.color[idx] = rgb565(c.r, c.g, c.b);
+        gSunCache.alpha[idx] = ca;
+      } else {
+        // 柔和内日冕 + 8 道极淡微芒
+        float t = 1.0f - (d - Rf) / static_cast<float>(SunSpriteCache::CORONA_PAD);
+        t = constrain(t, 0.0f, 1.0f);
+        float angle = atan2f(dy, dx);
+        float rays = 0.84f + 0.16f * cosf(angle * 8.0f);
+        uint8_t ca = static_cast<uint8_t>(t * t * 95.0f * rays);
+        gSunCache.color[idx] = rgb565(coronaC.r, coronaC.g, coronaC.b);
+        gSunCache.alpha[idx] = ca;
       }
     }
   }
 }
 
-// 绘制真实月相与淡淡银蓝月晕
-void drawMoonPhaseAndGlow(uint16_t *fb, int cx, int cy, float phase) {
-  uint16_t glow565 = rgb565(135, 175, 235);
-  uint16_t moon565 = rgb565(242, 246, 255);
-  constexpr int R_GLOW = 46;
-  constexpr float R_MOON = 12.5f;
-  float cosPhi = cosf(phase * 2.0f * kPi);
-  bool waxing = (phase <= 0.5f);
+// 绘制太阳与多层柔和大气光晕 (warmth: 0=正午淡暖白, 1=晨昏暖橘红)
+// 允许穿过顶部状态栏背后 (y>=0)，并在时间数字上沿 (y=152..164) 平滑淡出
+void drawSunGlowAndDisc(uint16_t *fb, int cx, int cy, float warmth) {
+  ensureSunSprite(warmth);
 
-  int y0 = max(60, cy - R_GLOW), y1 = min(479, cy + R_GLOW);
-  int x0 = max(0, cx - R_GLOW),  x1 = min(479, cx + R_GLOW);
+  RGB glowC = lerpRgb({255, 236, 198}, {255, 134, 64}, warmth);
+  uint16_t glow565 = rgb565(glowC.r, glowC.g, glowC.b);
+
+  constexpr int R_GLOW = 72;
+  constexpr int R_GLOW2 = R_GLOW * R_GLOW;
+  const float glowStrength = (84.0f + warmth * 40.0f) / 255.0f;
+
+  int y0 = max(0, cy - R_GLOW), y1 = min(164, cy + R_GLOW);
+  int x0 = max(0, cx - R_GLOW), x1 = min(479, cx + R_GLOW);
   for (int y = y0; y <= y1; ++y) {
     int dy = y - cy;
     int dy2 = dy * dy;
+    float vFade = (y > 152) ? static_cast<float>(164 - y) / 12.0f : 1.0f;
     uint16_t *row = fb + y * 480;
     for (int x = x0; x <= x1; ++x) {
       int dx = x - cx;
       int d2 = dx * dx + dy2;
-      if (d2 > R_GLOW * R_GLOW) continue;
-      float d = sqrtf(static_cast<float>(d2));
-      float g = 1.0f - d / R_GLOW;
-      uint8_t ga = static_cast<uint8_t>(g * g * g * 58.0f);
+      if (d2 >= R_GLOW2) continue;
+      uint8_t ga = static_cast<uint8_t>(fastGlowFalloff(d2, R_GLOW2) * glowStrength * vFade);
       if (ga > 1) row[x] = blend565(row[x], glow565, ga);
-      if (d <= R_MOON + 1.2f) {
-        float edge = (d <= R_MOON) ? 1.0f : max(0.0f, 1.0f - (d - R_MOON) / 1.2f);
-        float maxRx = sqrtf(max(0.0f, R_MOON * R_MOON - dy2));
-        float termX = maxRx * cosPhi;
-        bool lit = waxing ? (dx >= termX) : (dx <= -termX);
-        float soft = 1.0f;
-        float distToTerm = fabsf(static_cast<float>(dx) - (waxing ? termX : -termX));
-        if (distToTerm < 1.8f) soft = lit ? (0.5f + 0.5f * distToTerm / 1.8f) : (0.5f - 0.5f * distToTerm / 1.8f);
-        else if (!lit) soft = 0.08f; // 微弱灰光地球照
-        uint8_t ma = static_cast<uint8_t>(edge * soft * 215.0f);
-        if (ma > 1) row[x] = blend565(row[x], moon565, ma);
+    }
+  }
+
+  constexpr int H = SunSpriteCache::HALF;
+  constexpr int S = SunSpriteCache::SIZE;
+  int sx0 = cx - H, sy0 = cy - H;
+  for (int py = 0; py < S; ++py) {
+    int dy = sy0 + py;
+    if (dy < 0 || dy > 164) continue;
+    uint8_t vFade = (dy > 152) ? static_cast<uint8_t>(((164 - dy) * 255) / 12) : 255;
+    uint16_t *row = fb + dy * 480;
+    for (int px = 0; px < S; ++px) {
+      int dx = sx0 + px;
+      if (dx < 0 || dx >= 480) continue;
+      uint8_t a = gSunCache.alpha[py * S + px];
+      if (!a) continue;
+      if (vFade < 255) a = static_cast<uint8_t>((static_cast<uint16_t>(a) * vFade) / 255U);
+      if (a > 1) row[dx] = blend565(row[dx], gSunCache.color[py * S + px], a);
+    }
+  }
+}
+
+// 精致 3D 月相精灵缓存（月海暗斑 + 球面 Lambert 光照 + 临边昏暗 + 地球照）
+struct MoonSpriteCache {
+  static constexpr int R = 17;
+  static constexpr int SIZE = R * 2 + 3; // 37x37
+  float cachedPhase = -1.0f;
+  uint16_t color[SIZE * SIZE];
+  uint8_t alpha[SIZE * SIZE];
+};
+static MoonSpriteCache gMoonCache;
+
+void ensureMoonSprite(float phase) {
+  if (gMoonCache.cachedPhase >= 0.0f && fabsf(phase - gMoonCache.cachedPhase) < 0.004f) return;
+  gMoonCache.cachedPhase = phase;
+
+  constexpr int R = MoonSpriteCache::R;
+  constexpr int S = MoonSpriteCache::SIZE;
+  constexpr float Rf = static_cast<float>(R);
+  // 太阳方向向量：phase=0 新月(背光), 0.25 上弦(右亮), 0.5 满月(正对), 0.75 下弦(左亮)
+  float theta = phase * 2.0f * kPi;
+  float sx = sinf(theta);
+  float sz = -cosf(theta);
+
+  // 月海暗斑中心 (nx, ny, radius, darkness)
+  struct Mare { float x, y, r, d; };
+  static const Mare kMaria[] = {
+    {-0.28f, -0.22f, 0.34f, 0.26f}, // 雨海
+    { 0.14f, -0.26f, 0.24f, 0.22f}, // 澄海
+    { 0.34f, -0.04f, 0.22f, 0.24f}, // 静海
+    { 0.54f, -0.20f, 0.13f, 0.20f}, // 危海
+    {-0.46f,  0.14f, 0.32f, 0.22f}, // 风暴洋
+    { 0.24f,  0.22f, 0.18f, 0.18f}, // 丰富海
+  };
+
+  for (int py = 0; py < S; ++py) {
+    float dy = static_cast<float>(py - (R + 1));
+    for (int px = 0; px < S; ++px) {
+      float dx = static_cast<float>(px - (R + 1));
+      float d = sqrtf(dx * dx + dy * dy);
+      int idx = py * S + px;
+      if (d > Rf + 1.1f) {
+        gMoonCache.alpha[idx] = 0;
+        continue;
       }
+      float aa = (d <= Rf - 0.3f) ? 1.0f : constrain(1.0f - (d - (Rf - 0.3f)) / 1.4f, 0.0f, 1.0f);
+      float nx = constrain(dx / Rf, -1.0f, 1.0f);
+      float ny = constrain(dy / Rf, -1.0f, 1.0f);
+      float nz = sqrtf(max(0.0f, 1.0f - nx * nx - ny * ny));
+
+      // 月海纹理调制 (0.68 ~ 1.0)
+      float albedo = 1.0f;
+      for (const auto &m : kMaria) {
+        float md = hypotf(nx - m.x, ny - m.y);
+        if (md < m.r) {
+          float w = 1.0f - md / m.r;
+          albedo -= m.d * w * w;
+        }
+      }
+      // 细微高地明暗斑驳
+      float micro = 0.04f * sinf(nx * 11.0f + ny * 7.0f) * cosf(ny * 13.0f - nx * 5.0f);
+      albedo = constrain(albedo + micro, 0.62f, 1.04f);
+
+      // 球面光照 + 临边昏暗 + 地球照
+      float ndotl = nx * sx + nz * sz;
+      float lit = constrain((ndotl + 0.10f) / 0.24f, 0.0f, 1.0f);
+      // 顺滑 S 曲线柔化明暗交界线
+      lit = lit * lit * (3.0f - 2.0f * lit);
+      float limb = 0.78f + 0.22f * nz;
+      float lum = (0.11f + 0.89f * lit * (0.45f + 0.55f * max(0.0f, ndotl))) * albedo * limb;
+      // 暗面微弱银蓝边缘轮廓（新月时也有立体月轮）
+      float rim = (nz < 0.35f) ? (1.0f - nz / 0.35f) * 0.14f : 0.0f;
+      lum = constrain(lum + rim, 0.08f, 1.0f);
+
+      // 亮部暖银白、暗部冷灰蓝地球照
+      RGB darkCol = {68, 88, 126};
+      RGB litCol  = {248, 246, 238};
+      RGB c = lerpRgb(darkCol, litCol, constrain((lum - 0.08f) / 0.92f, 0.0f, 1.0f));
+      gMoonCache.color[idx] = rgb565(c.r, c.g, c.b);
+      gMoonCache.alpha[idx] = static_cast<uint8_t>(aa * (90.0f + 165.0f * lit));
+    }
+  }
+}
+
+// 绘制精致月相与双层银蓝月晕（可穿过顶部状态栏背后 y>=0，在数字上沿 y=152..164 淡出）
+void drawMoonPhaseAndGlow(uint16_t *fb, int cx, int cy, float phase) {
+  ensureMoonSprite(phase);
+
+  // 1. 双层柔和月晕（外层冷银蓝 + 内层暖银白）
+  uint16_t outerGlow = rgb565(125, 168, 232);
+  uint16_t innerGlow = rgb565(220, 232, 250);
+  constexpr int R_GLOW = 54;
+  constexpr int R_GLOW2 = R_GLOW * R_GLOW;
+  constexpr int R_IN2 = 28 * 28;
+  int y0 = max(0, cy - R_GLOW), y1 = min(164, cy + R_GLOW);
+  int x0 = max(0, cx - R_GLOW), x1 = min(479, cx + R_GLOW);
+  for (int y = y0; y <= y1; ++y) {
+    int dy = y - cy;
+    int dy2 = dy * dy;
+    float vFade = (y > 152) ? static_cast<float>(164 - y) / 12.0f : 1.0f;
+    uint16_t *row = fb + y * 480;
+    for (int x = x0; x <= x1; ++x) {
+      int dx = x - cx;
+      int d2 = dx * dx + dy2;
+      if (d2 >= R_GLOW2) continue;
+      uint8_t oa = static_cast<uint8_t>(fastGlowFalloff(d2, R_GLOW2) * 0.24f * vFade);
+      if (oa > 1) row[x] = blend565(row[x], outerGlow, oa);
+      if (d2 < R_IN2) {
+        uint8_t ia = static_cast<uint8_t>(fastGlowFalloff(d2, R_IN2) * 0.20f * vFade);
+        if (ia > 1) row[x] = blend565(row[x], innerGlow, ia);
+      }
+    }
+  }
+
+  // 2. 贴上缓存好的 3D 月相精灵
+  constexpr int R = MoonSpriteCache::R;
+  constexpr int S = MoonSpriteCache::SIZE;
+  int sx0 = cx - (R + 1), sy0 = cy - (R + 1);
+  for (int py = 0; py < S; ++py) {
+    int dy = sy0 + py;
+    if (dy < 0 || dy > 164) continue;
+    uint8_t vFade = (dy > 152) ? static_cast<uint8_t>(((164 - dy) * 255) / 12) : 255;
+    uint16_t *row = fb + dy * 480;
+    for (int px = 0; px < S; ++px) {
+      int dx = sx0 + px;
+      if (dx < 0 || dx >= 480) continue;
+      uint8_t a = gMoonCache.alpha[py * S + px];
+      if (!a) continue;
+      if (vFade < 255) a = static_cast<uint8_t>((static_cast<uint16_t>(a) * vFade) / 255U);
+      if (a > 1) row[dx] = blend565(row[dx], gMoonCache.color[py * S + px], a);
     }
   }
 }
@@ -713,17 +908,18 @@ void blitPixelScene4x(uint16_t *fb) {
   for (int sy = 0; sy < kSceneH; ++sy) {
     const uint16_t *src = sSceneBuf + sy * kSceneW;
     int baseY = sy * 4;
-    for (int repY = 0; repY < 4; ++repY) {
-      uint16_t *dst = fb + (baseY + repY) * 480;
-      for (int sx = 0; sx < kSceneW; ++sx) {
-        uint16_t c = src[sx];
-        int dx = sx * 4;
-        dst[dx]     = c;
-        dst[dx + 1] = c;
-        dst[dx + 2] = c;
-        dst[dx + 3] = c;
-      }
+    uint32_t *dst0 = reinterpret_cast<uint32_t *>(fb + baseY * 480);
+    for (int sx = 0; sx < kSceneW; ++sx) {
+      uint32_t c2 = static_cast<uint32_t>(src[sx]);
+      c2 |= (c2 << 16);
+      int dx = sx * 2;
+      dst0[dx]     = c2;
+      dst0[dx + 1] = c2;
     }
+    const uint16_t *row0 = fb + baseY * 480;
+    memcpy(fb + (baseY + 1) * 480, row0, 480 * sizeof(uint16_t));
+    memcpy(fb + (baseY + 2) * 480, row0, 480 * sizeof(uint16_t));
+    memcpy(fb + (baseY + 3) * 480, row0, 480 * sizeof(uint16_t));
   }
 }
 
@@ -743,7 +939,7 @@ bool DisplayUI::checkClockPetClick(int16_t x, int16_t y, uint8_t clockTheme) con
 bool DisplayUI::checkClockDemoClick(int16_t x, int16_t y) const {
   if (currentMode != UI_MODE_CLOCK) return false;
   // 点击上半区时间数字/落地窗区域切换 24 小时实机演示模式
-  return x >= 32 && x < 448 && y >= 68 && y < 244;
+  return x >= 32 && x < 448 && y >= 68 && y < 300;
 }
 
 void DisplayUI::toggleClockDemo() {
@@ -828,20 +1024,14 @@ bool DisplayUI::clockNeedsAnimTick(const IMUSensor &imu, const RTCManager &rtc, 
   bool meteorActive = (meteorStartMs != 0);
   bool happyActive = (now < petHappyUntilMs);
 
-  // 极简天象：检测设备倾斜以提供丝滑的陀螺仪视差反馈
+  // 极简天象：仅在视差尚未收敛到目标位置时保持高帧率，静止后自动回到 1fps
   bool skyTilting = false;
   if (cTheme == CLOCK_STYLE_SKY && imu.isReady) {
-    float tx = 0.0f;
-    switch (currentRotation) {
-      case 0: tx =  imu.ax; break;
-      case 1: tx =  imu.ay; break;
-      case 2: tx = -imu.ax; break;
-      case 3: tx = -imu.ay; break;
-    }
-    if (fabsf(tx) > 0.14f) skyTilting = true;
+    float targetPx = calcSkyTargetPx(imu, currentRotation);
+    if (fabsf(targetPx - sSkySmoothPx) > 0.6f) skyTilting = true;
   }
 
-  // 自适应节能帧率：活跃动效/演示模式/倾斜视差 ~18fps (55ms)，静止小猫 ~2fps (500ms)，静止极简天象 1fps (走秒触发)
+  // 自适应节能帧率：活跃动效/演示模式 ~18fps (55ms，避免过度占用 PSRAM 带宽引发 RGB 频闪)，静止小猫 ~2fps (500ms)，静止极简天象 1fps
   bool highFps = clockDemoMode || hourlyChimeActive || happyActive || skyTilting ||
                  (cTheme == CLOCK_STYLE_SKY && meteorActive);
   unsigned long interval = highFps ? 55UL : (cTheme == CLOCK_STYLE_PIXEL_CAT ? 500UL : 1000UL);
@@ -885,46 +1075,13 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     sampleSkyGradient(hourF, topC, botC);
 
     // 陀螺仪视差偏移量（平放时为 0，倾斜时提供柔和景深错位）
-    static float smoothPx = 0.0f;
-    float targetPx = 0.0f;
-    if (imu.isReady) {
-      float tx = 0.0f;
-      switch (currentRotation) {
-        case 0: tx =  imu.ax; break;
-        case 1: tx =  imu.ay; break;
-        case 2: tx = -imu.ax; break;
-        case 3: tx = -imu.ay; break;
-      }
-      if (fabsf(tx) > 0.10f) targetPx = constrain(tx * 22.0f, -15.0f, 15.0f);
-    }
-    smoothPx += (targetPx - smoothPx) * 0.25f;
-    int pxShift = static_cast<int>(lroundf(smoothPx));
+    float targetPx = calcSkyTargetPx(imu, currentRotation);
+    sSkySmoothPx += (targetPx - sSkySmoothPx) * 0.28f;
+    if (fabsf(targetPx - sSkySmoothPx) <= 0.6f) sSkySmoothPx = targetPx;
+    int pxShift = static_cast<int>(lroundf(sSkySmoothPx));
 
-    // 1. 绘制 480x480 垂直平滑渐变天幕（4x4 Bayer 有序抖动消除 RGB565 色带）
-    for (int y = 0; y < 480; ++y) {
-      float t = static_cast<float>(y) / 479.0f;
-      float rF = topC.r + (botC.r - topC.r) * t;
-      float gF = topC.g + (botC.g - topC.g) * t;
-      float bF = topC.b + (botC.b - topC.b) * t;
-      const int8_t *bRow = kBayer4x4[y & 3];
-      uint16_t *row = fb + y * 480;
-      uint16_t dithered[4];
-      for (int k = 0; k < 4; ++k) {
-        float d = (bRow[k] - 7.5f) / 16.0f;
-        int r = constrain(static_cast<int>(rF + d * 8.0f), 0, 255);
-        int g = constrain(static_cast<int>(gF + d * 4.0f), 0, 255);
-        int b = constrain(static_cast<int>(bF + d * 8.0f), 0, 255);
-        dithered[k] = static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
-      }
-      for (int x = 0; x < 480; x += 4) {
-        row[x]     = dithered[0];
-        row[x + 1] = dithered[1];
-        row[x + 2] = dithered[2];
-        row[x + 3] = dithered[3];
-      }
-    }
-
-    // 计算晨昏暖度 (05:30-08:00 与 16:30-19:00 为暖色朝暮)
+    // 1. 绘制 480x480 垂直平滑渐变天幕（纯顺序 32-bit 写入 fb，避免 PSRAM-to-PSRAM 缓存拷贝抢占 RGB DMA 带宽）
+    bool isNight = (!effectiveTimeValid || hour >= 20 || hour < 6);
     float warmth = 0.0f;
     if (hourF >= 5.2f && hourF <= 8.2f) {
       warmth = 1.0f - fabsf(hourF - 6.6f) / 1.6f;
@@ -933,8 +1090,30 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
     }
     warmth = constrain(warmth, 0.0f, 1.0f);
 
+    for (int y = 0; y < 480; ++y) {
+      float t = static_cast<float>(y) / 479.0f;
+      float rF = topC.r + (botC.r - topC.r) * t;
+      float gF = topC.g + (botC.g - topC.g) * t;
+      float bF = topC.b + (botC.b - topC.b) * t;
+      const int8_t *bRow = kBayer4x4[y & 3];
+      uint16_t dithered[4];
+      for (int k = 0; k < 4; ++k) {
+        float d = (bRow[k] - 7.5f) / 16.0f;
+        int r = constrain(static_cast<int>(rF + d * 8.0f), 0, 255);
+        int g = constrain(static_cast<int>(gF + d * 4.0f), 0, 255);
+        int b = constrain(static_cast<int>(bF + d * 8.0f), 0, 255);
+        dithered[k] = static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+      }
+      uint32_t *row32 = reinterpret_cast<uint32_t *>(fb + y * 480);
+      uint32_t p01 = static_cast<uint32_t>(dithered[0]) | (static_cast<uint32_t>(dithered[1]) << 16);
+      uint32_t p23 = static_cast<uint32_t>(dithered[2]) | (static_cast<uint32_t>(dithered[3]) << 16);
+      for (int x32 = 0; x32 < 240; x32 += 2) {
+        row32[x32]     = p01;
+        row32[x32 + 1] = p23;
+      }
+    }
+
     // 2. 深夜星空与偶发流星
-    bool isNight = (!effectiveTimeValid || hour >= 20 || hour < 6);
     if (isNight) {
       float tSec = now / 1000.0f;
       int starShift = pxShift / 3;
@@ -975,17 +1154,17 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
       }
     }
 
-    // 3. 真实日月轨迹与月相（躲在雾化远山与时间数字后的远景天体，正午抬高至顶部上方避免遮挡数字）
+    // 3. 真实日月轨迹与月相（在时间数字上方 y=64..148 升降，可自然掠过顶部状态栏背后）
     if (effectiveTimeValid && hourF >= 5.75f && hourF <= 18.25f) {
       float p = (hourF - 5.75f) / 12.5f;
-      int sunX = static_cast<int>(lroundf(58.0f + p * 364.0f)) + pxShift / 2;
-      int sunY = static_cast<int>(lroundf(375.0f - sinf(p * kPi) * 283.0f));
+      int sunX = static_cast<int>(lroundf(68.0f + p * 344.0f)) + pxShift / 2;
+      int sunY = static_cast<int>(lroundf(148.0f - sinf(p * kPi) * 84.0f));
       drawSunGlowAndDisc(fb, sunX, sunY, warmth);
     } else {
       float nightF = (hourF >= 18.0f) ? (hourF - 18.0f) : (hourF + 6.0f);
       float p = constrain(nightF / 12.0f, 0.0f, 1.0f);
-      int moonX = static_cast<int>(lroundf(64.0f + p * 352.0f)) + pxShift / 2;
-      int moonY = static_cast<int>(lroundf(365.0f - sinf(p * kPi) * 270.0f));
+      int moonX = static_cast<int>(lroundf(68.0f + p * 344.0f)) + pxShift / 2;
+      int moonY = static_cast<int>(lroundf(148.0f - sinf(p * kPi) * 84.0f));
       float mPhase = rtc.timeValid
           ? calcMoonPhase(rtc.currentDateTime.getYear(), rtc.currentDateTime.getMonth(), rtc.currentDateTime.getDay())
           : 0.35f;
@@ -1008,7 +1187,7 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
       }
     }
 
-    // 6. 透明叠加大号时间（带极淡悬浮投影与冒号温柔呼吸）、秒数与日期星期
+    // 5. 透明叠加大号时间（y=165 上下居中）、秒数与日期星期
     char timeBuf[16];
     snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u", hour, minute);
     int width = digitTextWidth(timeBuf, 70);
@@ -1339,7 +1518,7 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
   drawHeader(power, rtc);
   if (clockDemoMode) {
     centeredText("24H 昼夜演示中 · 点击时间退出",
-                 cTheme == CLOCK_STYLE_SKY ? 132 : 60, 1, kGold);
+                 cTheme == CLOCK_STYLE_SKY ? 314 : 60, 1, kGold);
   }
   bool sch = config.data.scheduleMode;
   gfx->fillCircle(36, 444, 22, sch ? 0x0247 : 0x0125);
@@ -1352,4 +1531,5 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
 
   dirty.full();
   lastClockTheme = cTheme;
+  lastClockAnimMs = now;
 }
