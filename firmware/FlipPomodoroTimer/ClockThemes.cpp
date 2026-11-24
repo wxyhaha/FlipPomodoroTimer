@@ -1,5 +1,6 @@
 #include "DisplayUI.h"
 #include "DigitFont.h"
+#include "MoonTexture.h"
 #include <math.h>
 
 namespace {
@@ -311,10 +312,10 @@ void drawSunGlowAndDisc(uint16_t *fb, int cx, int cy, float warmth, float trajAl
   }
 }
 
-// 精致 3D 月相精灵缓存（月海暗斑 + 球面 Lambert 光照 + 临边昏暗 + 地球照）
+// 精致 3D 月相精灵缓存（真实月海反照率贴图 + Lommel-Seeliger 月壤散射 + 真实地球照）
 struct MoonSpriteCache {
-  static constexpr int R = 17;
-  static constexpr int SIZE = R * 2 + 3; // 37x37
+  static constexpr int R = kMoonTexRadius;
+  static constexpr int SIZE = kMoonTexSize; // 45x45
   float cachedPhase = -1.0f;
   uint16_t color[SIZE * SIZE];
   uint8_t alpha[SIZE * SIZE];
@@ -332,17 +333,7 @@ void ensureMoonSprite(float phase) {
   float theta = phase * 2.0f * kPi;
   float sx = sinf(theta);
   float sz = -cosf(theta);
-
-  // 月海暗斑中心 (nx, ny, radius, darkness)
-  struct Mare { float x, y, r, d; };
-  static const Mare kMaria[] = {
-    {-0.28f, -0.22f, 0.34f, 0.26f}, // 雨海
-    { 0.14f, -0.26f, 0.24f, 0.22f}, // 澄海
-    { 0.34f, -0.04f, 0.22f, 0.24f}, // 静海
-    { 0.54f, -0.20f, 0.13f, 0.20f}, // 危海
-    {-0.46f,  0.14f, 0.32f, 0.22f}, // 风暴洋
-    { 0.24f,  0.22f, 0.18f, 0.18f}, // 丰富海
-  };
+  float illumFrac = 0.5f * (1.0f - cosf(theta));
 
   for (int py = 0; py < S; ++py) {
     float dy = static_cast<float>(py - (R + 1));
@@ -350,60 +341,65 @@ void ensureMoonSprite(float phase) {
       float dx = static_cast<float>(px - (R + 1));
       float d = sqrtf(dx * dx + dy * dy);
       int idx = py * S + px;
-      if (d > Rf + 1.1f) {
+      if (d > Rf + 1.0f) {
         gMoonCache.alpha[idx] = 0;
         continue;
       }
-      float aa = (d <= Rf - 0.3f) ? 1.0f : constrain(1.0f - (d - (Rf - 0.3f)) / 1.4f, 0.0f, 1.0f);
+      float aa = (d <= Rf - 0.35f) ? 1.0f : constrain(1.0f - (d - (Rf - 0.35f)) / 1.35f, 0.0f, 1.0f);
       float nx = constrain(dx / Rf, -1.0f, 1.0f);
       float ny = constrain(dy / Rf, -1.0f, 1.0f);
       float nz = sqrtf(max(0.0f, 1.0f - nx * nx - ny * ny));
 
-      // 月海纹理调制 (0.68 ~ 1.0)
-      float albedo = 1.0f;
-      for (const auto &m : kMaria) {
-        float md = hypotf(nx - m.x, ny - m.y);
-        if (md < m.r) {
-          float w = 1.0f - md / m.r;
-          albedo -= m.d * w * w;
-        }
-      }
-      // 细微高地明暗斑驳
-      float micro = 0.04f * sinf(nx * 11.0f + ny * 7.0f) * cosf(ny * 13.0f - nx * 5.0f);
-      albedo = constrain(albedo + micro, 0.62f, 1.04f);
+      // 从 PROGMEM 读取真实月球正面反照率贴图
+      float rawAlb = static_cast<float>(pgm_read_byte(&kMoonAlbedo[idx])) / 255.0f;
+      if (rawAlb < 0.15f) rawAlb = 0.65f;
+      float albedo = constrain(0.32f + 0.68f * rawAlb, 0.32f, 1.0f);
 
-      // 球面光照 + 临边昏暗 + 地球照
+      // 无偏置锐利明暗交界线（无大气散射，弦月呈现干净直线）
       float ndotl = nx * sx + nz * sz;
-      float lit = constrain((ndotl + 0.10f) / 0.24f, 0.0f, 1.0f);
-      // 顺滑 S 曲线柔化明暗交界线
-      lit = lit * lit * (3.0f - 2.0f * lit);
-      float limb = 0.78f + 0.22f * nz;
-      float lum = (0.11f + 0.89f * lit * (0.45f + 0.55f * max(0.0f, ndotl))) * albedo * limb;
-      // 暗面微弱银蓝边缘轮廓（新月时也有立体月轮）
-      float rim = (nz < 0.35f) ? (1.0f - nz / 0.35f) * 0.14f : 0.0f;
-      lum = constrain(lum + rim, 0.08f, 1.0f);
+      float lit = smoothstep01((ndotl + 0.025f) / 0.085f);
 
-      // 亮部暖银白、暗部冷灰蓝地球照
-      RGB darkCol = {68, 88, 126};
-      RGB litCol  = {248, 246, 238};
-      RGB c = lerpRgb(darkCol, litCol, constrain((lum - 0.08f) / 0.92f, 0.0f, 1.0f));
+      // 月壤 Lommel-Seeliger 后向散射近似（满月通体均匀明亮，避免塑料球中心热点）
+      float mu0 = max(0.0f, ndotl);
+      float mu  = max(0.08f, nz);
+      float ls  = (mu0 > 0.0f) ? min(1.06f, (2.0f * mu0) / (mu0 + mu)) : 0.0f;
+      float shade = 0.86f * ls + 0.14f * mu0;
+
+      // 亮面月岩到月海色调过渡
+      RGB mareShadow = {112, 120, 134};
+      RGB highlandLit = {248, 246, 238};
+      RGB litCol = lerpRgb(mareShadow, highlandLit, constrain(albedo * shade, 0.0f, 1.0f));
+
+      // 暗面克制地球照（仅在蛾眉/新月附近显现淡雅冷灰轮廓，无人工白边）
+      float esMod = 0.55f + 0.45f * albedo;
+      RGB earthCol = {
+        static_cast<uint8_t>(lroundf(36.0f * esMod)),
+        static_cast<uint8_t>(lroundf(48.0f * esMod)),
+        static_cast<uint8_t>(lroundf(74.0f * esMod))
+      };
+      float darkAlpha = 18.0f + 34.0f * (1.0f - illumFrac);
+
+      RGB c = lerpRgb(earthCol, litCol, lit);
       gMoonCache.color[idx] = rgb565(c.r, c.g, c.b);
-      gMoonCache.alpha[idx] = static_cast<uint8_t>(aa * (90.0f + 165.0f * lit));
+      gMoonCache.alpha[idx] = static_cast<uint8_t>(aa * (darkAlpha + (255.0f - darkAlpha) * lit));
     }
   }
 }
 
-// 绘制精致月相与双层银蓝月晕（可穿过顶部状态栏背后 y>=0，在数字上沿 y=142..172 用 Smoothstep 淡出）
+// 绘制精致月相与随盈亏动态缩放的双层银蓝月晕（可穿过顶部状态栏背后 y>=0，在数字上沿 y=142..172 用 Smoothstep 淡出）
 void drawMoonPhaseAndGlow(uint16_t *fb, int cx, int cy, float phase, float trajAlpha) {
   if (trajAlpha <= 0.01f) return;
   ensureMoonSprite(phase);
 
-  // 1. 双层柔和月晕（外层冷银蓝 + 内层暖银白）
+  float illumFrac = 0.5f * (1.0f - cosf(phase * 2.0f * kPi));
+  float glowScale = 0.12f + 0.88f * powf(constrain(illumFrac, 0.0f, 1.0f), 0.85f);
+
+  // 1. 双层柔和月晕（外层冷银蓝 + 内层暖银白，亮度随月相亮面比例动态变化）
   uint16_t outerGlow = rgb565(125, 168, 232);
   uint16_t innerGlow = rgb565(220, 232, 250);
-  constexpr int R_GLOW = 54;
+  constexpr int R_GLOW = 56;
   constexpr int R_GLOW2 = R_GLOW * R_GLOW;
-  constexpr int R_IN2 = 28 * 28;
+  constexpr int R_IN2 = 32 * 32;
   int y0 = max(0, cy - R_GLOW), y1 = min(172, cy + R_GLOW);
   int x0 = max(0, cx - R_GLOW), x1 = min(479, cx + R_GLOW);
   for (int y = y0; y <= y1; ++y) {
@@ -415,10 +411,10 @@ void drawMoonPhaseAndGlow(uint16_t *fb, int cx, int cy, float phase, float trajA
       int dx = x - cx;
       int d2 = dx * dx + dy2;
       if (d2 >= R_GLOW2) continue;
-      uint8_t oa = static_cast<uint8_t>(fastGlowFalloff(d2, R_GLOW2) * 0.24f * vFade);
+      uint8_t oa = static_cast<uint8_t>(fastGlowFalloff(d2, R_GLOW2) * 0.24f * glowScale * vFade);
       if (oa > 1) row[x] = blend565(row[x], outerGlow, oa);
       if (d2 < R_IN2) {
-        uint8_t ia = static_cast<uint8_t>(fastGlowFalloff(d2, R_IN2) * 0.20f * vFade);
+        uint8_t ia = static_cast<uint8_t>(fastGlowFalloff(d2, R_IN2) * 0.22f * glowScale * vFade);
         if (ia > 1) row[x] = blend565(row[x], innerGlow, ia);
       }
     }
