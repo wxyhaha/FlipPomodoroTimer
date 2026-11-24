@@ -170,16 +170,19 @@ void drawAlphaDigitsOnFb(uint16_t *fb, const char *text, int x, int y, int w, in
 }
 
 // 计算近似真实月相 (0.0=新月, 0.25=上弦, 0.5=满月, 0.75=下弦)
-float calcMoonPhase(uint16_t y, uint8_t m, uint8_t d) {
+// 基准新月：2000-01-06 18:14 UTC（距 2000-01-01 00:00 UTC 为 5.759722 天）
+float calcMoonPhase(uint16_t y, uint8_t m, uint8_t d, float localHour = 12.0f, int8_t tzHours = 8) {
   if (y < 2000) return 0.35f;
   int yy = y, mm = m;
   if (mm < 3) { yy--; mm += 12; }
-  long jd = 365L * yy + yy / 4 - yy / 100 + yy / 400 + (153 * (mm + 1)) / 5 + d - 730122L;
-  float daysSinceNew = static_cast<float>(jd) - 5.597661f;
-  float cycles = daysSinceNew / 29.53058867f;
-  float phase = cycles - floorf(cycles);
-  if (phase < 0.0f) phase += 1.0f;
-  return phase;
+  long daysSince2000 = 365L * yy + yy / 4 - yy / 100 + yy / 400 + (153 * (mm + 1)) / 5 + d - 730548L;
+  double utcDays = static_cast<double>(daysSince2000) +
+                   (static_cast<double>(localHour) - static_cast<double>(tzHours)) / 24.0;
+  double daysSinceNew = utcDays - 5.759722;
+  double cycles = daysSinceNew / 29.530588853;
+  double phase = cycles - floor(cycles);
+  if (phase < 0.0) phase += 1.0;
+  return static_cast<float>(phase);
 }
 
 // 快速平方距离衰减查表（避免逐像素 sqrtf）
@@ -1177,8 +1180,10 @@ void DisplayUI::renderClockPage(const IMUSensor &imu, const PowerManager &power,
       float p = constrain(nightF / 12.0f, 0.0f, 1.0f);
       int moonX = static_cast<int>(lroundf(68.0f + p * 344.0f)) + pxShift / 2;
       int moonY = static_cast<int>(lroundf(156.0f - sinf(p * kPi) * 92.0f));
+      float rtcHourF = rtc.currentDateTime.getHour() + rtc.currentDateTime.getMinute() / 60.0f;
       float mPhase = rtc.timeValid
-          ? calcMoonPhase(rtc.currentDateTime.getYear(), rtc.currentDateTime.getMonth(), rtc.currentDateTime.getDay())
+          ? calcMoonPhase(rtc.currentDateTime.getYear(), rtc.currentDateTime.getMonth(),
+                          rtc.currentDateTime.getDay(), rtcHourF, config.data.timezoneOffsetHours)
           : 0.35f;
       drawMoonPhaseAndGlow(fb, moonX, moonY, mPhase, calcTrajAlpha(p));
     }
