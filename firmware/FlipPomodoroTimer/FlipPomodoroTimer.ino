@@ -113,7 +113,6 @@ void skipScheduleItem() {
 unsigned long lastTelemetryTime = 0;
 bool stableVbusIn = false;
 bool candidateVbusIn = false;
-bool startIdleTimerAfterUnplug = false;
 unsigned long vbusCandidateSince = 0;
 constexpr unsigned long USB_MODE_DEBOUNCE_MS = 1000;
 
@@ -139,7 +138,6 @@ void updateUsbMode(unsigned long now) {
 
   stableVbusIn = candidateVbusIn;
   if (stableVbusIn) {
-    startIdleTimerAfterUnplug = false;
     if (config.data.scheduleMode || engine.state == STATE_FOCUS_RUNNING || engine.state == STATE_BREAK_RUNNING) {
       Serial.println("[POWER] USB connected during countdown/schedule; keep timer and page");
     } else if (ui.getMode() != UI_MODE_STATS) {
@@ -148,11 +146,7 @@ void updateUsbMode(unsigned long now) {
     }
   } else {
     if (engine.pauseReason == PAUSE_BY_USB) engine.pauseReason = PAUSE_BY_USER;
-    if (ui.getMode() != UI_MODE_STATS) {
-      ui.setMode(UI_MODE_POMODORO);
-    }
-    startIdleTimerAfterUnplug = engine.state == STATE_IDLE;
-    Serial.println("[POWER] USB input removed -> Pomodoro page");
+    Serial.println("[POWER] USB input removed -> keep current page");
   }
 }
 
@@ -437,19 +431,6 @@ void loop() {
         Serial.printf("[POMO] Tilt back to Same Face %u -> Resume Timer!\n", face);
         engine.resume();
       }
-    }
-  }
-
-  if (startIdleTimerAfterUnplug) {
-    if (config.data.scheduleMode || stableVbusIn || engine.state != STATE_IDLE || ui.getMode() != UI_MODE_POMODORO) {
-      startIdleTimerAfterUnplug = false;
-    } else if (imu.isReady && imu.isTiltedFace() &&
-               imu.candidateOrientation == imu.currentOrientation &&
-               millis() - imu.candidateStartTime >= IMUSensor::STABLE_DURATION_MS) {
-      uint8_t face = imu.getFaceIndex();
-      engine.startFace(face, config.getFaceDurationSec(face));
-      startIdleTimerAfterUnplug = false;
-      Serial.println("[POMO] USB removed -> start current stable face");
     }
   }
 
